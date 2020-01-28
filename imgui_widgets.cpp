@@ -3166,7 +3166,7 @@ static ImVec2 InputTextCalcTextSizeW(const ImWchar* text_begin, const ImWchar* t
     ImGuiContext& g = *GImGui;
     ImFont* font = g.Font;
     const float line_height = g.FontSize;
-    const float scale = line_height / font->FontSize;
+    const float scale = line_height * font->FontScaleRatioInv;
 
     ImVec2 text_size = ImVec2(0,0);
     float line_width = 0.0f;
@@ -3652,14 +3652,19 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     // Password pushes a temporary font with only a fallback glyph
     if (is_password && !is_displaying_hint)
     {
-        const ImFontGlyph* glyph = g.Font->FindGlyph('*');
+        ImFont* font = g.Font;
+        if (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts)
+            font = g.IO.Fonts->MapFontToDpi(font, window->Viewport->DpiScale);
+        const ImFontGlyph* glyph = font->FindGlyph('*');
         ImFont* password_font = &g.InputTextPasswordFont;
-        password_font->FontSize = g.Font->FontSize;
-        password_font->Scale = g.Font->Scale;
-        password_font->DisplayOffset = g.Font->DisplayOffset;
-        password_font->Ascent = g.Font->Ascent;
-        password_font->Descent = g.Font->Descent;
-        password_font->ContainerAtlas = g.Font->ContainerAtlas;
+        password_font->FontSize = font->FontSize;
+        password_font->DpiScale = font->DpiScale;
+        password_font->FontScaleRatioInv = font->FontScaleRatioInv;
+        password_font->Scale = font->Scale;
+        password_font->DisplayOffset = font->DisplayOffset;
+        password_font->Ascent = font->Ascent;
+        password_font->Descent = font->Descent;
+        password_font->ContainerAtlas = font->ContainerAtlas;
         password_font->FallbackGlyph = glyph;
         password_font->FallbackAdvanceX = glyph->AdvanceX;
         IM_ASSERT(password_font->Glyphs.empty() && password_font->IndexAdvanceX.empty() && password_font->IndexLookup.empty());

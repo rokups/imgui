@@ -2216,6 +2216,10 @@ struct ImFontConfig
     unsigned int    RasterizerFlags;        // 0x00     // Settings for custom font rasterizer (e.g. ImGuiFreeType). Leave as zero if you aren't using one.
     float           RasterizerMultiply;     // 1.0f     // Brighten (>1.0f) or darken (<1.0f) font output. Brightening small fonts may be a good workaround to make them more readable.
     ImWchar         EllipsisChar;           // -1       // Explicitly specify unicode codepoint of ellipsis character. When fonts are being merged first specified ellipsis will be used.
+    float           DpiScale;               // 1.0f     // Set to scale of specific monitor font config is used for.
+    bool            IsDuplicated;           // false    // Indicates that this font config is a copy created for one of monitors using it's DPI.
+    bool            IsUpsacled;             // false    // Indicates that this font config has DPI scaling applied already.
+    float           SizePixelsUnscaled;     //          // Size in pixels before performing DPI scaling.
 
     // [Internal]
     char            Name[40];               // Name (strictly to ease debugging)
@@ -2346,6 +2350,8 @@ struct ImFontAtlas
     // [Internal]
     IMGUI_API void              CalcCustomRectUV(const ImFontAtlasCustomRect* rect, ImVec2* out_uv_min, ImVec2* out_uv_max) const;
     IMGUI_API bool              GetMouseCursorTexData(ImGuiMouseCursor cursor, ImVec2* out_offset, ImVec2* out_size, ImVec2 out_uv_border[2], ImVec2 out_uv_fill[2]);
+    IMGUI_API void              CreatePerDpiFonts();
+    IMGUI_API ImFont*           MapFontToDpi(ImFont* base_font, float dpi);
 
     //-------------------------------------------
     // Members
@@ -2383,6 +2389,7 @@ struct ImFont
     // Members: Hot ~20/24 bytes (for CalcTextSize)
     ImVector<float>             IndexAdvanceX;      // 12-16 // out //            // Sparse. Glyphs->AdvanceX in a directly indexable way (cache-friendly for CalcTextSize functions which only this this info, and are often bottleneck in large UI).
     float                       FallbackAdvanceX;   // 4     // out // = FallbackGlyph->AdvanceX
+    float                       FontScaleRatioInv;  // 4     // out // = 1.0f / FontSize
     float                       FontSize;           // 4     // in  //            // Height of characters/line, set during loading (don't change after loading)
 
     // Members: Hot ~36/48 bytes (for CalcTextSize + render loop)
@@ -2402,6 +2409,8 @@ struct ImFont
     float                       Ascent, Descent;    // 4+4   // out //            // Ascent: distance from top to bottom of e.g. 'A' [0..FontSize]
     int                         MetricsTotalSurface;// 4     // out //            // Total surface in pixels to get an idea of the font rasterization/texture cost (not exact, we approximate the cost of padding between glyphs)
     ImU8                        Used4kPagesMap[(IM_UNICODE_CODEPOINT_MAX+1)/4096/8]; // 2 bytes if ImWchar=ImWchar16, 34 bytes if ImWchar==ImWchar32. Store 1-bit for each block of 4K codepoints that has one active glyph. This is mainly used to facilitate iterations accross all used codepoints.
+    int                         FontID;             // 4     // out //            // Identifier different for distinct fonts.
+    float                       DpiScale;           // 1.0f  // out //            // Set to scale of specific monitor font config is used for.
 
     // Methods
     IMGUI_API ImFont();
