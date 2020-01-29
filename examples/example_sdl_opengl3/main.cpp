@@ -15,6 +15,7 @@
 //  You may use another loader/header of your choice (glext, glLoadGen, etc.), or chose to manually implement your own.
 #if defined(IMGUI_IMPL_OPENGL_LOADER_GL3W)
 #include <GL/gl3w.h>            // Initialize with gl3wInit()
+#include <imgui_internal.h>
 #elif defined(IMGUI_IMPL_OPENGL_LOADER_GLEW)
 #include <GL/glew.h>            // Initialize with glewInit()
 #elif defined(IMGUI_IMPL_OPENGL_LOADER_GLAD)
@@ -102,6 +103,7 @@ int main(int, char**)
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+    io.ConfigFlags |= ImGuiConfigFlags_DpiEnableScaleFonts;
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
 
@@ -129,7 +131,7 @@ int main(int, char**)
     // - Read 'docs/FONTS.txt' for more instructions and details.
     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
     //io.Fonts->AddFontDefault();
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
+    io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
@@ -139,12 +141,20 @@ int main(int, char**)
     // Our state
     bool show_demo_window = true;
     bool show_another_window = false;
+    bool rescale_fonts = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     // Main loop
     bool done = false;
     while (!done)
     {
+        if (rescale_fonts)
+        {
+            GImGui->IO.Fonts->ClearTexData();
+            ImGui_ImplOpenGL3_CreateFontsTexture();
+            rescale_fonts = false;
+        }
+
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
         // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
@@ -186,7 +196,11 @@ int main(int, char**)
             if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                 counter++;
             ImGui::SameLine();
-            ImGui::Text("counter = %d", counter);
+            ImGui::Text("counter = %d", counter);    io.ConfigFlags |= ImGuiConfigFlags_DpiEnableScaleFonts;
+
+
+            float* dpi = &GImGui->PlatformIO.Monitors[ImGui::GetCurrentWindow()->Viewport->PlatformMonitor].DpiScale;
+            rescale_fonts |= ImGui::DragFloat("DPI", dpi, 0.01f, 1.0f, 2.0f);
 
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::End();
