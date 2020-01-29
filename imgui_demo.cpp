@@ -3367,7 +3367,7 @@ void ImGui::ShowFontSelector(const char* label)
 void ImGui::ShowStyleEditor(ImGuiStyle* ref)
 {
     // You can pass in a reference ImGuiStyle structure to compare to, revert to and save to (else it compares to an internally stored reference)
-    ImGuiStyle& style = ImGui::GetStyle();
+    ImGuiStyle& style = ImGui::GetStyleUnscaled();
     static ImGuiStyle ref_saved_style;
 
     // Default to using internal storage as reference

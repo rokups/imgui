@@ -3023,7 +3023,16 @@ static void SetCurrentWindow(ImGuiWindow* window)
     // Reselect font with appropriate DPI in case window moved to another screen.
     ImGui::SetCurrentFont(g.Font);
     if (window)
+    {
         g.FontSize = g.DrawListSharedData.FontSize = window->CalcFontSize();
+        float dpi_scale = window->Viewport->DpiScale;
+        if (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts)
+        {
+            g.StyleScaled = g.StyleUnscaled;
+            g.Style = g.StyleScaled;
+            g.StyleScaled.ScaleAllSizes(dpi_scale);
+        }
+    }
 }
 
 // Free up/compact internal window buffers, we can use this when a window becomes unused.
@@ -3389,6 +3398,12 @@ ImGuiPlatformIO& ImGui::GetPlatformIO()
 {
     IM_ASSERT(GImGui != NULL && "No current context. Did you call ImGui::CreateContext() or ImGui::SetCurrentContext()?");
     return GImGui->PlatformIO;
+}
+
+ImGuiStyle& ImGui::GetStyleUnscaled()
+{
+    IM_ASSERT(GImGui != NULL && "No current context. Did you call ImGui::CreateContext() and ImGui::SetCurrentContext() ?");
+    return GImGui->StyleUnscaled;
 }
 
 // Same value as passed to the old io.RenderDrawListsFn function. Valid after Render() and until the next call to NewFrame()
