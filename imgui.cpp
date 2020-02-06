@@ -1064,6 +1064,7 @@ ImGuiStyle::ImGuiStyle()
     AntiAliasedFill         = true;             // Enable anti-aliasing on filled shapes (rounded rectangles, circles, etc.)
     CurveTessellationTol    = 1.25f;            // Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
     CircleSegmentMaxError   = 1.60f;            // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
+    PointSize               = 1.0f;             // Size of a point, in pixels. 1.0f on 96 DPI screens. Use this value to scale sizes independently of screen pixel density.
 
     // Default theme
     ImGui::StyleColorsDark(this);
@@ -1093,6 +1094,12 @@ void ImGuiStyle::ScaleAllSizes(float scale_factor)
     DisplayWindowPadding = ImFloor(DisplayWindowPadding * scale_factor);
     DisplaySafeAreaPadding = ImFloor(DisplaySafeAreaPadding * scale_factor);
     MouseCursorScale = ImFloor(MouseCursorScale * scale_factor);
+    WindowBorderSize = ImFloor(WindowBorderSize * scale_factor);
+    ChildBorderSize = ImFloor(ChildBorderSize * scale_factor);
+    PopupBorderSize = ImFloor(PopupBorderSize * scale_factor);
+    FrameBorderSize = ImFloor(FrameBorderSize * scale_factor);
+    TabBorderSize = ImFloor(TabBorderSize * scale_factor);
+    PointSize = scale_factor;
 }
 
 ImGuiIO::ImGuiIO()
@@ -3023,16 +3030,7 @@ static void SetCurrentWindow(ImGuiWindow* window)
     // Reselect font with appropriate DPI in case window moved to another screen.
     ImGui::SetCurrentFont(g.Font);
     if (window)
-    {
         g.FontSize = g.DrawListSharedData.FontSize = window->CalcFontSize();
-        float dpi_scale = window->Viewport->DpiScale;
-        if (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts)
-        {
-            g.StyleScaled = g.StyleUnscaled;
-            g.Style = g.StyleScaled;
-            g.StyleScaled.ScaleAllSizes(dpi_scale);
-        }
-    }
 }
 
 // Free up/compact internal window buffers, we can use this when a window becomes unused.
@@ -10736,6 +10734,31 @@ void ImGui::SetCurrentViewport(ImGuiWindow* current_window, ImGuiViewportP* view
     g.CurrentDpiScale = viewport ? viewport->DpiScale : 1.0f;
     g.CurrentDpiScaleRound = IM_ROUND(g.CurrentDpiScale);
     g.CurrentViewport = viewport;
+
+    if ((g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) && viewport != NULL)
+    {
+        float dpi_scale = viewport->DpiScale;
+        ImDrawList* lists[3];
+        lists[0] = GetBackgroundDrawList(viewport);
+        lists[1] = GetForegroundDrawList(viewport);
+        lists[2] = current_window ? current_window->DrawList : NULL;
+
+        for (int i = 0; i < IM_ARRAYSIZE(lists); i++)
+        {
+            if (ImDrawList* list = lists[i])
+            {
+                list->_FringeScale = dpi_scale;
+                list->_FringeScaleInv = 1.0f / dpi_scale;
+            }
+        }
+
+        if (g.Style.PointSize != dpi_scale)
+        {
+            g.Style = g.StyleUnscaled;
+            g.Style.ScaleAllSizes(dpi_scale);
+        }
+    }
+
     //IMGUI_DEBUG_LOG_VIEWPORT("SetCurrentViewport changed '%s' 0x%08X\n", current_window ? current_window->Name : NULL, viewport ? viewport->ID : 0);
 
     // Notify platform layer of viewport changes
