@@ -322,7 +322,7 @@ struct ImFontBuildDstDataFT
 bool ImFontAtlasBuildWithFreeType(FT_Library ft_library, ImFontAtlas* atlas, unsigned int extra_flags)
 {
     IM_ASSERT(atlas->ConfigData.Size > 0);
-
+    atlas->CreatePerDpiFonts();
     ImFontAtlasBuildInit(atlas);
 
     // Clear atlas
