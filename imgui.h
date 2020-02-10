@@ -2334,6 +2334,22 @@ struct ImFont
     IMGUI_API bool              IsGlyphRangeUnused(unsigned int c_begin, unsigned int c_last);
 };
 
+namespace ImGui
+{
+#ifdef __cpp_user_defined_literals
+    namespace Literals
+    {
+        // User-defined literals can be used as a shorter way to scale a constant value. This feature requires C++11
+        // language standard and can be used by explicitly opting in:
+        //   using namespace ImGui::Literals;
+        //   float from_int = 123_pt;
+        //   float from_float = 123.4_pt;
+        inline float operator "" _pt(long double value) { return ImGui::GetStyle().PointSize * value; }
+        inline float operator "" _pt(unsigned long long int value) { return ImGui::GetStyle().PointSize * (float)value; }
+    }
+#endif
+}
+
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #elif defined(__GNUC__)
