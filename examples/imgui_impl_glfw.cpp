@@ -15,6 +15,7 @@
 
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
+//  2020-02-24: Inputs: Fix incorrect mouse position reporting when window is dragged on X11.
 //  2020-01-17: Inputs: Disable error callback while assigning mouse cursors because some X11 setup don't have them and it generates errors.
 //  2019-12-05: Inputs: Added support for new mouse cursors added in GLFW 3.4+ (resizing cursors, not allowed cursor).
 //  2019-10-18: Misc: Previously installed user callbacks are now restored on shutdown.
@@ -266,6 +267,8 @@ static void ImGui_ImplGlfw_UpdateMousePosAndButtons()
     io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
 #ifdef __EMSCRIPTEN__
     const bool focused = true; // Emscripten
+#elif GLFW_HAS_WINDOW_HOVERED
+    const bool focused = glfwGetWindowAttrib(g_Window, GLFW_HOVERED) != 0;
 #else
     const bool focused = glfwGetWindowAttrib(g_Window, GLFW_FOCUSED) != 0;
 #endif
