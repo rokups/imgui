@@ -75,6 +75,8 @@ static GLFWwindow*          g_Window = NULL;    // Main window
 static GlfwClientApi        g_ClientApi = GlfwClientApi_Unknown;
 static double               g_Time = 0.0;
 static bool                 g_MouseJustPressed[5] = { false, false, false, false, false };
+static bool                 g_MouseForcePressed[5] = { false, false, false, false, false };
+static int                  g_MouseForcePressedFrame = 0;
 static GLFWcursor*          g_MouseCursors[ImGuiMouseCursor_COUNT] = {};
 static bool                 g_InstalledCallbacks = false;
 static bool                 g_WantUpdateMonitors = true;
@@ -108,6 +110,10 @@ void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int acti
 
     if (action == GLFW_PRESS && button >= 0 && button < IM_ARRAYSIZE(g_MouseJustPressed))
         g_MouseJustPressed[button] = true;
+
+    // Ignore mouse-release events for one frame.
+    if (action == GLFW_RELEASE && button >= 0 && button < IM_ARRAYSIZE(g_MouseJustPressed) && g_MouseForcePressedFrame < ImGui::GetFrameCount())
+        g_MouseForcePressed[button] = false;
 }
 
 void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
@@ -293,7 +299,7 @@ static void ImGui_ImplGlfw_UpdateMousePosAndButtons()
     for (int i = 0; i < IM_ARRAYSIZE(io.MouseDown); i++)
     {
         // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
-        io.MouseDown[i] = g_MouseJustPressed[i] || glfwGetMouseButton(g_Window, i) != 0;
+        io.MouseDown[i] = g_MouseJustPressed[i] || g_MouseForcePressed[i] || glfwGetMouseButton(g_Window, i) != 0;
         g_MouseJustPressed[i] = false;
     }
 
@@ -564,6 +570,16 @@ static void ImGui_ImplGlfw_CreateWindow(ImGuiViewport* viewport)
     viewport->PlatformHandleRaw = glfwGetWin32Window(data->Window);
 #endif
     glfwSetWindowPos(data->Window, (int)viewport->Pos.x, (int)viewport->Pos.y);
+
+#if __linux__
+    // This is a workaround for issue https://github.com/glfw/glfw/issues/1562 where GLFW erroneously sends
+    // mouse-release event and reports mouse button as released upon new window creation. We mitigate this issue by
+    // maintaining current mouse button state on our end and ignoring single mouse-release event. When pressed mouse
+    // button is actually released GLFW sends a new mouse-released event which clears g_MouseForcePressed[]. This
+    // workaround may not be required on wayland platform.
+    memcpy(g_MouseForcePressed, ImGui::GetIO().MouseDown, sizeof(g_MouseForcePressed));
+    g_MouseForcePressedFrame = ImGui::GetFrameCount() + 1;
+#endif
 
     // Install GLFW callbacks for secondary viewports
     glfwSetMouseButtonCallback(data->Window, ImGui_ImplGlfw_MouseButtonCallback);
