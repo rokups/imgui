@@ -3118,7 +3118,7 @@ bool ImGui::FocusableItemRegister(ImGuiWindow* window, ImGuiID id)
     // Handle focus requests
     if (g.FocusRequestCurrWindow == window)
     {
-        if (window->DC.FocusCounterRegular == g.FocusRequestCurrCounterRegular)
+        if (window->DC.FocusCounterRegular == g.FocusRequestCurrCounterRegular && (g.FocusRequestCurrItemId == 0 || g.FocusRequestCurrItemId == id))
             return true;
         if (is_tab_stop && window->DC.FocusCounterTabStop == g.FocusRequestCurrCounterTabStop)
         {
@@ -3566,6 +3566,7 @@ void ImGui::UpdateTabFocus()
     // Turn queued focus request into current one
     g.FocusRequestCurrWindow = NULL;
     g.FocusRequestCurrCounterRegular = g.FocusRequestCurrCounterTabStop = INT_MAX;
+    g.FocusRequestCurrItemId = 0;
     if (g.FocusRequestNextWindow != NULL)
     {
         ImGuiWindow* window = g.FocusRequestNextWindow;
@@ -3574,6 +3575,8 @@ void ImGui::UpdateTabFocus()
             g.FocusRequestCurrCounterRegular = ImModPositive(g.FocusRequestNextCounterRegular, window->DC.FocusCounterRegular + 1);
         if (g.FocusRequestNextCounterTabStop != INT_MAX && window->DC.FocusCounterTabStop != -1)
             g.FocusRequestCurrCounterTabStop = ImModPositive(g.FocusRequestNextCounterTabStop, window->DC.FocusCounterTabStop + 1);
+        if (g.FocusRequestNextItemId != 0)
+            g.FocusRequestCurrItemId = g.FocusRequestNextItemId;
         g.FocusRequestNextWindow = NULL;
         g.FocusRequestNextCounterRegular = g.FocusRequestNextCounterTabStop = INT_MAX;
     }
@@ -6594,9 +6597,26 @@ void ImGui::SetKeyboardFocusHere(int offset)
     IM_ASSERT(offset >= -1);    // -1 is allowed but not below
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
-    g.FocusRequestNextWindow = window;
-    g.FocusRequestNextCounterRegular = window->DC.FocusCounterRegular + 1 + offset;
-    g.FocusRequestNextCounterTabStop = INT_MAX;
+    int focus_counter = window->DC.FocusCounterRegular + 1 + offset;
+
+    // We could handle non-negative offset immediately, so focus change is effective immediately, however that would
+    // change current behavior, therefore we probably should not.
+    //if (offset < 0)
+    {
+        // Handle negative offset on next frame, but only focus previous item if it does not disappear
+        g.FocusRequestNextItemId = window->DC.LastItemId;
+        g.FocusRequestNextWindow = window;
+        g.FocusRequestNextCounterRegular = focus_counter;
+        g.FocusRequestNextCounterTabStop = INT_MAX;
+    }
+    //else
+    //{
+    //    // Handle non-negative offset on current frame, it is ok if next element disappears on next frame
+    //    g.FocusRequestCurrWindow = window;
+    //    g.FocusRequestCurrItemId = 0;
+    //    g.FocusRequestCurrCounterRegular = focus_counter;
+    //    g.FocusRequestCurrCounterTabStop = INT_MAX;
+    //}
 }
 
 void ImGui::SetItemDefaultFocus()

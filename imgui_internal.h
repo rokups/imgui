@@ -1228,8 +1228,10 @@ struct ImGuiContext
     ImGuiWindow*            FocusRequestNextWindow;             //
     int                     FocusRequestCurrCounterRegular;     // Any item being requested for focus, stored as an index (we on layout to be stable between the frame pressing TAB and the next frame, semi-ouch)
     int                     FocusRequestCurrCounterTabStop;     // Tab item being requested for focus, stored as an index
+    ImGuiID                 FocusRequestCurrItemId;             //
     int                     FocusRequestNextCounterRegular;     // Stored for next frame
     int                     FocusRequestNextCounterTabStop;     // "
+    ImGuiID                 FocusRequestNextItemId;             //
     bool                    FocusTabPressed;                    //
 
     // Render
@@ -1400,6 +1402,7 @@ struct ImGuiContext
         FocusRequestCurrWindow = FocusRequestNextWindow = NULL;
         FocusRequestCurrCounterRegular = FocusRequestCurrCounterTabStop = INT_MAX;
         FocusRequestNextCounterRegular = FocusRequestNextCounterTabStop = INT_MAX;
+        FocusRequestCurrItemId = FocusRequestNextItemId = 0;
         FocusTabPressed = false;
 
         DimBgRatio = 0.0f;
