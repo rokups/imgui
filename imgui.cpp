@@ -2908,7 +2908,7 @@ ImGuiWindow::ImGuiWindow(ImGuiContext* context, const char* name)
     LastFrameJustFocused = -1;
     LastTimeActive = -1.0f;
     ItemWidthDefault = 0.0f;
-    FontWindowScale = FontDpiScale = 1.0f;
+    FontWindowScale = 1.0f;
     SettingsOffset = -1;
 
     DrawList = &DrawListInst;
@@ -3024,6 +3024,8 @@ static void SetCurrentWindow(ImGuiWindow* window)
 {
     ImGuiContext& g = *GImGui;
     g.CurrentWindow = window;
+    // Reselect font with appropriate DPI in case window moved to another screen.
+    ImGui::SetCurrentFont(g.Font);
     if (window)
         g.FontSize = g.DrawListSharedData.FontSize = window->CalcFontSize();
 }
@@ -3422,6 +3424,8 @@ static ImDrawList* GetViewportDrawList(ImGuiViewportP* viewport, size_t drawlist
         draw_list->_OwnerName = drawlist_name;
         viewport->DrawLists[drawlist_no] = draw_list;
     }
+
+    draw_list->_FringeScale = viewport->DpiScale;
 
     // Our ImDrawList system requires that there is always a command
     if (viewport->LastFrameDrawLists[drawlist_no] != g.FrameCount)
@@ -4361,6 +4365,7 @@ void ImDrawDataBuilder::FlattenIntoSingleLayer()
 
 static void SetupViewportDrawData(ImGuiViewportP* viewport, ImVector<ImDrawList*>* draw_lists)
 {
+    ImGuiContext& g = *GImGui;
     ImDrawData* draw_data = &viewport->DrawDataP;
     viewport->DrawData = draw_data; // Make publicly accessible
     draw_data->Valid = true;
@@ -4369,7 +4374,10 @@ static void SetupViewportDrawData(ImGuiViewportP* viewport, ImVector<ImDrawList*
     draw_data->TotalVtxCount = draw_data->TotalIdxCount = 0;
     draw_data->DisplayPos = viewport->Pos;
     draw_data->DisplaySize = viewport->Size;
-    draw_data->FramebufferScale = ImGui::GetIO().DisplayFramebufferScale; // FIXME-VIEWPORT: This may vary on a per-monitor/viewport basis?
+    if (g.ConfigFlagsCurrFrame & ImGuiConfigFlags_DpiEnableScaleViewports)
+        draw_data->FramebufferScale = ImVec2(viewport->DpiScale, viewport->DpiScale);
+    else
+        draw_data->FramebufferScale = g.IO.DisplayFramebufferScale;
     draw_data->OwnerViewport = viewport;
     for (int n = 0; n < draw_lists->Size; n++)
     {
@@ -6068,7 +6076,6 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         UpdateSelectWindowViewport(window);
         SetCurrentViewport(window, window->Viewport);
-        window->FontDpiScale = (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) ? window->Viewport->DpiScale : 1.0f;
         SetCurrentWindow(window);
         flags = window->Flags;
 
@@ -6195,7 +6202,6 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
                 // FIXME-DPI
                 //IM_ASSERT(old_viewport->DpiScale == window->Viewport->DpiScale); // FIXME-DPI: Something went wrong
                 SetCurrentViewport(window, window->Viewport);
-                window->FontDpiScale = (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) ? window->Viewport->DpiScale : 1.0f;
                 SetCurrentWindow(window);
             }
 
@@ -6419,6 +6425,7 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         // Setup draw list and outer clipping rectangle
         window->DrawList->Clear();
+        window->DrawList->_FringeScale = window->Viewport->DpiScale;
         window->DrawList->PushTextureID(g.Font->ContainerAtlas->TexID);
         PushClipRect(host_rect.Min, host_rect.Max, false);
 
@@ -6847,6 +6854,14 @@ void ImGui::SetCurrentFont(ImFont* font)
     ImGuiContext& g = *GImGui;
     IM_ASSERT(font && font->IsLoaded());    // Font Atlas not created. Did you call io.Fonts->GetTexDataAsRGBA32 / GetTexDataAsAlpha8 ?
     IM_ASSERT(font->Scale > 0.0f);
+
+    // Password font is a fake font that is assembled from already dpi-mapped font.
+    if (font != &g.InputTextPasswordFont)
+    {
+        // Select appropriate font size based on DPI of current viewport.
+        font = g.IO.Fonts->MapFontToDpi(font, g.CurrentViewport ? g.CurrentViewport->DpiScale : 1.f);
+    }
+
     g.Font = font;
     g.FontBaseSize = ImMax(1.0f, g.IO.FontGlobalScale * g.Font->FontSize * g.Font->Scale);
     g.FontSize = g.CurrentWindow ? g.CurrentWindow->CalcFontSize() : 0.0f;
@@ -7550,6 +7565,8 @@ static void ImGui::ErrorCheckNewFrameSanityChecks()
             IM_ASSERT(mon.DpiScale != 0.0f);
         }
     }
+    else
+        IM_ASSERT(!(g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleViewports) && "Viewports are not enabled.");
 }
 
 static void ImGui::ErrorCheckEndFrameSanityChecks()
@@ -10708,7 +10725,21 @@ void ImGui::SetCurrentViewport(ImGuiWindow* current_window, ImGuiViewportP* view
         viewport->LastFrameActive = g.FrameCount;
     if (g.CurrentViewport == viewport)
         return;
-    g.CurrentDpiScale = viewport ? viewport->DpiScale : 1.0f;
+
+    if (g.ConfigFlagsCurrFrame & ImGuiConfigFlags_DpiEnableScaleViewports)
+    {
+        if (viewport)
+        {
+            g.CurrentDpiScale = viewport->DpiScale;
+            g.CurrentDpiScaleInverse = 1.0f / g.CurrentDpiScale;
+        }
+        else
+        {
+            g.CurrentDpiScale = 1.0f;
+            g.CurrentDpiScaleInverse = 1.0f;
+        }
+    }
+
     g.CurrentViewport = viewport;
     //IMGUI_DEBUG_LOG_VIEWPORT("SetCurrentViewport changed '%s' 0x%08X\n", current_window ? current_window->Name : NULL, viewport ? viewport->ID : 0);
 
@@ -10873,7 +10904,8 @@ static void ImGui::UpdateViewportsNewFrame()
     }
     AddUpdateViewport(NULL, IMGUI_VIEWPORT_DEFAULT_ID, main_viewport_pos, main_viewport_size, ImGuiViewportFlags_CanHostOtherWindows);
 
-    g.CurrentDpiScale = 0.0f;
+    g.CurrentDpiScale = 1.0f;
+    g.CurrentDpiScaleInverse = 1.0f;
     g.CurrentViewport = NULL;
     g.MouseViewport = NULL;
     for (int n = 0; n < g.Viewports.Size; n++)
@@ -11082,7 +11114,15 @@ ImGuiViewportP* ImGui::AddUpdateViewport(ImGuiWindow* window, ImGuiID id, const 
         // Store initial DpiScale before the OS platform window creation, based on expected monitor data.
         // This is so we can select an appropriate font size on the first frame of our window lifetime
         if (viewport->PlatformMonitor != -1)
-            viewport->DpiScale = g.PlatformIO.Monitors[viewport->PlatformMonitor].DpiScale;
+        {
+            if (g.ConfigFlagsCurrFrame & ImGuiConfigFlags_DpiEnableScaleViewports)
+            {
+                viewport->DpiScale = g.PlatformIO.Monitors[viewport->PlatformMonitor].DpiScale;
+#ifndef __APPLE__
+                viewport->CoordinateScale = viewport->DpiScale;
+#endif
+            }
+        }
     }
 
     viewport->Window = window;
@@ -15584,6 +15624,38 @@ void ImGui::ShowMetricsWindow(bool* p_open)
                     mon.MainPos.x, mon.MainPos.y, mon.MainPos.x + mon.MainSize.x, mon.MainPos.y + mon.MainSize.y, mon.MainSize.x, mon.MainSize.y,
                     mon.WorkPos.x, mon.WorkPos.y, mon.WorkPos.x + mon.WorkSize.x, mon.WorkPos.y + mon.WorkSize.y, mon.WorkSize.x, mon.WorkSize.y);
             }
+            ImGui::TreePop();
+        }
+        if (g.PlatformIO.Monitors.Size > 0 && ImGui::TreeNode("Monitors grids", "Monitor grid layout (%d)", g.PlatformIO.Monitors.Size))
+        {
+            static bool is_virtual_grid = false;
+            ImGui::Checkbox("Show virtual grid", &is_virtual_grid);
+
+            ImRect grid;
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            for (int i = 0; i < g.PlatformIO.Monitors.Size; i++)
+            {
+                const ImGuiPlatformMonitor& mon = g.PlatformIO.Monitors[i];
+                ImRect rect(mon.MainPos, mon.MainPos + mon.MainSize);
+                if (is_virtual_grid)
+                    rect /= mon.DpiScale;
+                grid.Add(rect);
+            }
+            float ratio = (g.CurrentWindow->ContentRegionRect.GetWidth() - g.CurrentWindow->DC.Indent.x) / grid.GetWidth() * 0.9f;
+            ImDrawList* draw_list = g.CurrentWindow->DrawList;
+            for (int i = 0; i < g.PlatformIO.Monitors.Size; i++)
+            {
+                const ImGuiPlatformMonitor& mon = g.PlatformIO.Monitors[i];
+                char name[32];
+                ImFormatString(name, IM_ARRAYSIZE(name), "Monitor %d, DPI=%g", i, mon.DpiScale);
+                ImVec2 name_size = ImGui::CalcTextSize(name);
+                ImRect rect = ImRect(mon.MainPos, mon.MainPos + mon.MainSize) * ratio;
+                if (is_virtual_grid)
+                    rect /= mon.DpiScale;
+                draw_list->AddRect(pos + rect.Min, pos + rect.Max, IM_COL32_WHITE);
+                draw_list->AddText(pos + rect.GetCenter() - name_size * 0.5f, IM_COL32_WHITE, name);
+            }
+            ImGui::ItemSize(grid * ratio);
             ImGui::TreePop();
         }
         for (int i = 0; i < g.Viewports.Size; i++)
