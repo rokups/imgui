@@ -1479,6 +1479,8 @@ struct ImGuiStyle
     bool        AntiAliasedFill;            // Enable anti-aliasing on filled shapes (rounded rectangles, circles, etc.)
     float       CurveTessellationTol;       // Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
     float       CircleSegmentMaxError;      // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
+    float       PointSize;                  // Size of a point, in pixels. 1.0f on 96 DPI screens. Use this value to scale sizes independently of screen pixel density.
+    float       PointSizeRound;             // = IM_ROUND(PointSize).
     ImVec4      Colors[ImGuiCol_COUNT];
 
     IMGUI_API ImGuiStyle();
@@ -2219,6 +2221,7 @@ struct ImFontConfig
     unsigned int    RasterizerFlags;        // 0x00     // Settings for custom font rasterizer (e.g. ImGuiFreeType). Leave as zero if you aren't using one.
     float           RasterizerMultiply;     // 1.0f     // Brighten (>1.0f) or darken (<1.0f) font output. Brightening small fonts may be a good workaround to make them more readable.
     ImWchar         EllipsisChar;           // -1       // Explicitly specify unicode codepoint of ellipsis character. When fonts are being merged first specified ellipsis will be used.
+    float           SizePixelsUnscaled;     //          // Size in pixels before performing DPI scaling.
 
     // [Internal]
     char            Name[40];               // Name (strictly to ease debugging)
@@ -2350,6 +2353,7 @@ struct ImFontAtlas
     // [Internal]
     IMGUI_API void              CalcCustomRectUV(const ImFontAtlasCustomRect* rect, ImVec2* out_uv_min, ImVec2* out_uv_max) const;
     IMGUI_API bool              GetMouseCursorTexData(ImGuiMouseCursor cursor, ImVec2* out_offset, ImVec2* out_size, ImVec2 out_uv_border[2], ImVec2 out_uv_fill[2]);
+    IMGUI_API void              CreatePerDpiFonts();
 
     //-------------------------------------------
     // Members
@@ -2387,6 +2391,7 @@ struct ImFont
     // Members: Hot ~20/24 bytes (for CalcTextSize)
     ImVector<float>             IndexAdvanceX;      // 12-16 // out //            // Sparse. Glyphs->AdvanceX in a directly indexable way (cache-friendly for CalcTextSize functions which only this this info, and are often bottleneck in large UI).
     float                       FallbackAdvanceX;   // 4     // out // = FallbackGlyph->AdvanceX
+    float                       FontScaleRatioInv;  // 4     // out // = 1.0f / FontSize
     float                       FontSize;           // 4     // in  //            // Height of characters/line, set during loading (don't change after loading)
 
     // Members: Hot ~36/48 bytes (for CalcTextSize + render loop)
@@ -2607,6 +2612,22 @@ struct ImGuiViewport
     ImVec2              GetWorkPos()            { return ImVec2(Pos.x + WorkOffsetMin.x, Pos.y + WorkOffsetMin.y); }
     ImVec2              GetWorkSize()           { return ImVec2(Size.x - WorkOffsetMin.x + WorkOffsetMax.x, Size.y - WorkOffsetMin.y + WorkOffsetMax.y); } // This not clamped
 };
+
+namespace ImGui
+{
+#ifdef __cpp_user_defined_literals
+    namespace Literals
+    {
+        // User-defined literals can be used as a shorter way to scale a constant value. This feature requires C++11
+        // language standard and can be used by explicitly opting in:
+        //   using namespace ImGui::Literals;
+        //   float from_int = 123_pt;
+        //   float from_float = 123.4_pt;
+        inline float operator "" _pt(long double value) { return ImGui::GetStyle().PointSize * value; }
+        inline float operator "" _pt(unsigned long long int value) { return ImGui::GetStyle().PointSize * (float)value; }
+    }
+#endif
+}
 
 #if defined(__clang__)
 #pragma clang diagnostic pop

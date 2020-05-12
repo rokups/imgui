@@ -1524,7 +1524,7 @@ ImFontConfig::ImFontConfig()
     FontDataSize = 0;
     FontDataOwnedByAtlas = true;
     FontNo = 0;
-    SizePixels = 0.0f;
+    SizePixels = SizePixelsUnscaled = 0.0f;
     OversampleH = 3; // FIXME: 2 may be a better default?
     OversampleV = 1;
     PixelSnapH = false;
@@ -1731,6 +1731,8 @@ ImFont* ImFontAtlas::AddFont(const ImFontConfig* font_cfg)
     if (new_font_cfg.DstFont->EllipsisChar == (ImWchar)-1)
         new_font_cfg.DstFont->EllipsisChar = font_cfg->EllipsisChar;
 
+    new_font_cfg.SizePixelsUnscaled = font_cfg->SizePixels;
+
     // Invalidate texture
     ClearTexData();
     return new_font_cfg.DstFont;
@@ -1890,6 +1892,17 @@ bool ImFontAtlas::GetMouseCursorTexData(ImGuiMouseCursor cursor_type, ImVec2* ou
     return true;
 }
 
+void    ImFontAtlas::CreatePerDpiFonts()
+{
+    ImGuiStyle& style = GImGui->Style;
+
+    for (int i = 0; i < ConfigData.Size; i++)
+    {
+        ImFontConfig& config = ConfigData[i];
+        config.SizePixels = IM_ROUND(config.SizePixelsUnscaled * style.PointSize);
+    }
+}
+
 bool    ImFontAtlas::Build()
 {
     IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
@@ -1953,7 +1966,7 @@ static void UnpackBitVectorToFlatIndexList(const ImBitVector* in, ImVector<int>*
 bool    ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
 {
     IM_ASSERT(atlas->ConfigData.Size > 0);
-
+    atlas->CreatePerDpiFonts();
     ImFontAtlasBuildInit(atlas);
 
     // Clear atlas
@@ -2223,6 +2236,7 @@ void ImFontAtlasBuildSetupFont(ImFontAtlas* atlas, ImFont* font, ImFontConfig* f
     {
         font->ClearOutputData();
         font->FontSize = font_config->SizePixels;
+        font->FontScaleRatioInv = 1.0f / font->FontSize;
         font->ConfigData = font_config;
         font->ContainerAtlas = atlas;
         font->Ascent = ascent;
@@ -2605,6 +2619,7 @@ ImFont::ImFont()
     Scale = 1.0f;
     Ascent = Descent = 0.0f;
     MetricsTotalSurface = 0;
+    FontScaleRatioInv = 1.0f;
     memset(Used4kPagesMap, 0, sizeof(Used4kPagesMap));
 }
 
@@ -2625,6 +2640,7 @@ void    ImFont::ClearOutputData()
     DirtyLookupTables = true;
     Ascent = Descent = 0.0f;
     MetricsTotalSurface = 0;
+    FontScaleRatioInv = 1.0f;
 }
 
 void ImFont::BuildLookupTable()
@@ -2877,7 +2893,7 @@ ImVec2 ImFont::CalcTextSizeA(float size, float max_width, float wrap_width, cons
         text_end = text_begin + strlen(text_begin); // FIXME-OPT: Need to avoid this.
 
     const float line_height = size;
-    const float scale = size / FontSize;
+    const float scale = size * FontScaleRatioInv;
 
     ImVec2 text_size = ImVec2(0,0);
     float line_width = 0.0f;
@@ -2970,7 +2986,7 @@ void ImFont::RenderChar(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
     const ImFontGlyph* glyph = FindGlyph(c);
     if (!glyph || !glyph->Visible)
         return;
-    float scale = (size >= 0.0f) ? (size / FontSize) : 1.0f;
+    float scale = (size >= 0.0f) ? (size * FontScaleRatioInv) : 1.0f;
     pos.x = IM_FLOOR(pos.x + DisplayOffset.x);
     pos.y = IM_FLOOR(pos.y + DisplayOffset.y);
     draw_list->PrimReserve(6, 4);
@@ -2990,8 +3006,8 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
     if (y > clip_rect.w)
         return;
 
-    const float scale = size / FontSize;
-    const float line_height = FontSize * scale;
+    const float scale = size * FontScaleRatioInv;
+    const float line_height = size;
     const bool word_wrap_enabled = (wrap_width > 0.0f);
     const char* word_wrap_eol = NULL;
 

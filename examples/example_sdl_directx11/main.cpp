@@ -96,6 +96,12 @@ int main(int, char**)
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
+    // DPI-scale contents.
+    int display_index = SDL_GetWindowDisplayIndex(window);
+    float point_size = 1.0f;
+    if (display_index >= 0 && SDL_GetDisplayDPI(display_index, &point_size, NULL, NULL) == 0)
+        ImGui::GetStyle().ScaleAllSizes(point_size / 96.0f);
+
     // Main loop
     bool done = false;
     while (!done)
