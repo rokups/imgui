@@ -2919,7 +2919,7 @@ ImGuiWindow::ImGuiWindow(ImGuiContext* context, const char* name)
     LastFrameJustFocused = -1;
     LastTimeActive = -1.0f;
     ItemWidthDefault = 0.0f;
-    FontWindowScale = FontDpiScale = 1.0f;
+    FontWindowScale = 1.0f;
     SettingsOffset = -1;
 
     DrawList = &DrawListInst;
@@ -3035,6 +3035,8 @@ static void SetCurrentWindow(ImGuiWindow* window)
 {
     ImGuiContext& g = *GImGui;
     g.CurrentWindow = window;
+    // Reselect font with appropriate DPI in case window moved to another screen.
+    ImGui::SetCurrentFont(g.Font);
     if (window)
         g.FontSize = g.DrawListSharedData.FontSize = window->CalcFontSize();
 }
@@ -3402,6 +3404,12 @@ ImGuiPlatformIO& ImGui::GetPlatformIO()
 {
     IM_ASSERT(GImGui != NULL && "No current context. Did you call ImGui::CreateContext() or ImGui::SetCurrentContext()?");
     return GImGui->PlatformIO;
+}
+
+ImGuiStyle& ImGui::GetStyleUnscaled()
+{
+    IM_ASSERT(GImGui != NULL && "No current context. Did you call ImGui::CreateContext() and ImGui::SetCurrentContext() ?");
+    return GImGui->StyleUnscaled;
 }
 
 // Same value as passed to the old io.RenderDrawListsFn function. Valid after Render() and until the next call to NewFrame()
@@ -6084,7 +6092,6 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         UpdateSelectWindowViewport(window);
         SetCurrentViewport(window, window->Viewport);
-        window->FontDpiScale = (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) ? window->Viewport->DpiScale : 1.0f;
         SetCurrentWindow(window);
         flags = window->Flags;
 
@@ -6211,7 +6218,6 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
                 // FIXME-DPI
                 //IM_ASSERT(old_viewport->DpiScale == window->Viewport->DpiScale); // FIXME-DPI: Something went wrong
                 SetCurrentViewport(window, window->Viewport);
-                window->FontDpiScale = (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) ? window->Viewport->DpiScale : 1.0f;
                 SetCurrentWindow(window);
             }
 
@@ -6867,6 +6873,12 @@ void ImGui::SetCurrentFont(ImFont* font)
     ImGuiContext& g = *GImGui;
     IM_ASSERT(font && font->IsLoaded());    // Font Atlas not created. Did you call io.Fonts->GetTexDataAsRGBA32 / GetTexDataAsAlpha8 ?
     IM_ASSERT(font->Scale > 0.0f);
+
+    // Password font is a fake font that is assembled from already dpi-mapped font.
+    // Select appropriate font size based on DPI of current viewport.
+    if ((g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) && font != &g.InputTextPasswordFont)
+        font = g.IO.Fonts->MapFontToDpi(font, g.CurrentViewport ? g.CurrentViewport->DpiScale : 1.f);
+
     g.Font = font;
     g.FontBaseSize = ImMax(1.0f, g.IO.FontGlobalScale * g.Font->FontSize * g.Font->Scale);
     g.FontSize = g.CurrentWindow ? g.CurrentWindow->CalcFontSize() : 0.0f;
@@ -10793,6 +10805,31 @@ void ImGui::SetCurrentViewport(ImGuiWindow* current_window, ImGuiViewportP* view
         return;
     g.CurrentDpiScale = viewport ? viewport->DpiScale : 1.0f;
     g.CurrentViewport = viewport;
+
+    if ((g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) && viewport != NULL)
+    {
+        float dpi_scale = viewport->DpiScale;
+        ImDrawList* lists[3];
+        lists[0] = GetBackgroundDrawList(viewport);
+        lists[1] = GetForegroundDrawList(viewport);
+        lists[2] = current_window ? current_window->DrawList : NULL;
+
+        // for (int i = 0; i < IM_ARRAYSIZE(lists); i++)
+        // {
+        //     if (ImDrawList* list = lists[i])
+        //     {
+        //         list->_FringeScale = dpi_scale;
+        //         list->_FringeScaleInv = 1.0f / dpi_scale;
+        //     }
+        // }
+
+        if (g.Style.PointSize != dpi_scale)
+        {
+            g.Style = g.StyleUnscaled;
+            g.Style.ScaleAllSizes(dpi_scale);
+        }
+    }
+
     //IMGUI_DEBUG_LOG_VIEWPORT("SetCurrentViewport changed '%s' 0x%08X\n", current_window ? current_window->Name : NULL, viewport ? viewport->ID : 0);
 
     // Notify platform layer of viewport changes
@@ -13629,7 +13666,7 @@ static void ImGui::DockNodePreviewDockRender(ImGuiWindow* host_window, ImGuiDock
         {
             ImRect draw_r = data->DropRectsDraw[dir + 1];
             ImRect draw_r_in = draw_r;
-            draw_r_in.Expand(-2.0f);
+            draw_r_in.Expand(-IM_FLOOR(2.0f * g.Style.PointSize));
             ImU32 overlay_col = (data->SplitDir == (ImGuiDir)dir && data->IsSplitDirExplicit) ? overlay_col_drop_hovered : overlay_col_drop;
             for (int overlay_n = 0; overlay_n < overlay_draw_lists_count; overlay_n++)
             {
@@ -14086,9 +14123,9 @@ void ImGui::DockSpace(ImGuiID id, const ImVec2& size_arg, ImGuiDockNodeFlags fla
     const ImVec2 content_avail = GetContentRegionAvail();
     ImVec2 size = ImFloor(size_arg);
     if (size.x <= 0.0f)
-        size.x = ImMax(content_avail.x + size.x, 4.0f); // Arbitrary minimum child size (0.0f causing too much issues)
+        size.x = ImMax(content_avail.x + size.x, IM_FLOOR(4.0f * g.Style.PointSize)); // Arbitrary minimum child size (0.0f causing too much issues)
     if (size.y <= 0.0f)
-        size.y = ImMax(content_avail.y + size.y, 4.0f);
+        size.y = ImMax(content_avail.y + size.y, IM_FLOOR(4.0f * g.Style.PointSize));
     IM_ASSERT(size.x > 0.0f && size.y > 0.0f);
 
     node->Pos = window->DC.CursorPos;
@@ -15219,7 +15256,7 @@ static void RenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* viewp
         ImRect thumb_r = thumb_window->Rect();
         ImRect title_r = thumb_window->TitleBarRect();
         ImRect thumb_r_scaled = ImRect(ImFloor(off + thumb_r.Min * scale), ImFloor(off +  thumb_r.Max * scale));
-        ImRect title_r_scaled = ImRect(ImFloor(off + title_r.Min * scale), ImFloor(off +  ImVec2(title_r.Max.x, title_r.Min.y) * scale) + ImVec2(0,5)); // Exaggerate title bar height
+        ImRect title_r_scaled = ImRect(ImFloor(off + title_r.Min * scale), ImFloor(off +  ImVec2(title_r.Max.x, title_r.Min.y) * scale) + ImVec2(0, IM_FLOOR(5.0f * g.Style.PointSize))); // Exaggerate title bar height
         thumb_r_scaled.ClipWithFull(bb);
         title_r_scaled.ClipWithFull(bb);
         const bool window_is_focused = (g.NavWindow && thumb_window->RootWindowForTitleBarHighlight == g.NavWindow->RootWindowForTitleBarHighlight);

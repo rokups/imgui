@@ -1524,7 +1524,7 @@ ImFontConfig::ImFontConfig()
     FontDataSize = 0;
     FontDataOwnedByAtlas = true;
     FontNo = 0;
-    SizePixels = SizePixelsUnscaled = 0.0f;
+    SizePixels = SizePoints = 0.0f;
     OversampleH = 3; // FIXME: 2 may be a better default?
     OversampleV = 1;
     PixelSnapH = false;
@@ -1658,6 +1658,35 @@ void    ImFontAtlas::ClearFonts()
     Fonts.clear();
 }
 
+void    ImFontAtlas::ClearShadowFonts()
+{
+    int i;
+    ImFont* first_shadow_font = NULL;
+    for (i = 0; i < ConfigData.Size; i++)
+    {
+        if (!ConfigData[i].FontDataOwnedByAtlas)
+        {
+            first_shadow_font = ConfigData[i].DstFont;
+            break;
+        }
+    }
+    ConfigData.resize(i);
+
+    int first_shadow_font_index = -1;
+    for (i = 0; i < Fonts.Size; i++)
+    {
+        ImFont* font = Fonts[i];
+        if (font == first_shadow_font)          // Doing the hard way because ConfigData.Size != Font.Size
+            first_shadow_font_index = i;
+
+        if (first_shadow_font_index > -1)
+            IM_DELETE(font);
+    }
+
+    if (first_shadow_font_index > -1)
+        Fonts.resize(first_shadow_font_index);
+}
+
 void    ImFontAtlas::Clear()
 {
     ClearInputData();
@@ -1709,11 +1738,17 @@ ImFont* ImFontAtlas::AddFont(const ImFontConfig* font_cfg)
 {
     IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
     IM_ASSERT(font_cfg->FontData != NULL && font_cfg->FontDataSize > 0);
-    IM_ASSERT(font_cfg->SizePixels > 0.0f);
+    IM_ASSERT(font_cfg->SizePixels > 0.0f || font_cfg->SizePoints > 0.0f);
+
+    // Ensure that fonts added by user are in the front of Fonts and ConfigData. Atlas rebuild will recreate shadow fonts.
+    ClearShadowFonts();
 
     // Create new font
     if (!font_cfg->MergeMode)
+    {
         Fonts.push_back(IM_NEW(ImFont));
+        Fonts.back()->FontID = Fonts.size();
+    }
     else
         IM_ASSERT(!Fonts.empty() && "Cannot use MergeMode for the first font"); // When using MergeMode make sure that a font has already been added before. You can use ImGui::GetIO().Fonts->AddFontDefault() to add the default imgui font.
 
@@ -1731,7 +1766,8 @@ ImFont* ImFontAtlas::AddFont(const ImFontConfig* font_cfg)
     if (new_font_cfg.DstFont->EllipsisChar == (ImWchar)-1)
         new_font_cfg.DstFont->EllipsisChar = font_cfg->EllipsisChar;
 
-    new_font_cfg.SizePixelsUnscaled = font_cfg->SizePixels;
+    if (new_font_cfg.SizePoints == 0)
+        new_font_cfg.SizePoints = font_cfg->SizePixels;
 
     // Invalidate texture
     ClearTexData();
@@ -1892,15 +1928,91 @@ bool ImFontAtlas::GetMouseCursorTexData(ImGuiMouseCursor cursor_type, ImVec2* ou
     return true;
 }
 
-void    ImFontAtlas::CreatePerDpiFonts()
+static int IMGUI_CDECL FloatReverseComparer(const void* lhs, const void* rhs)
 {
-    ImGuiStyle& style = GImGui->Style;
+    const float diff = *(float*)rhs - *(float*)lhs;
+    if (diff > 0.0f)
+        return 1;
+    else if (diff < 0.0f)
+        return -1;
+    else
+        return 0;
+}
 
-    for (int i = 0; i < ConfigData.Size; i++)
+void ImFontAtlas::CreatePerDpiFonts()
+{
+    // Duplicate all added fonts for each DPI. All font sizes are rendered into the same texture. Fonts are switched on
+    // the fly when window transitions through monitors of different dpi.
+    IM_ASSERT(Fonts.Size > 0);
+
+    // Ensure that no shadow-fonts exist before duplicating original fonts. They may still exist if fonts are being
+    // rebuilt without calling AddFont() (which also clears shadow fonts).
+    ClearShadowFonts();
+
+    ImGuiContext& g = *GImGui;
+    ImGuiPlatformIO& platform_io = g.PlatformIO;
+    ImVector<float> dpi_set;
+
+    // Gather a list of unique DPI scales present across all attached screens.
+    if (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts)
     {
-        ImFontConfig& config = ConfigData[i];
-        config.SizePixels = IM_ROUND(config.SizePixelsUnscaled * style.PointSize);
+        IM_ASSERT(platform_io.Monitors.Size > 0);
+        for (int i = 0; i < platform_io.Monitors.Size; i++)
+        {
+            ImGuiPlatformMonitor& monitor = platform_io.Monitors[i];
+            if (!dpi_set.contains(monitor.DpiScale))
+                dpi_set.push_back(monitor.DpiScale);
+        }
+        // High DPI goes to the front of the list so that custom rects get supersampled.
+        ImQsort(dpi_set.Data, dpi_set.Size, sizeof(float), FloatReverseComparer);
     }
+    else if (g.IO.DisplayFramebufferScale.x != 1.0f)
+    {
+        // Monitors are empty when viewports are not enabled. In that case we only handle dpi of main viewport at build
+        // time. This is incorrect, but will properly work at least in some cases (single hdpi monitor).
+        dpi_set.push_back(g.IO.DisplayFramebufferScale.x);
+    }
+    else
+        dpi_set.push_back(1.0f);
+
+    for (int i = 0; i < dpi_set.Size; i++)
+    {
+        for (int j = 0, conf_total = ConfigData.Size; j < conf_total; j++)
+        {
+            ImFontConfig* source_config = &ConfigData[j];
+
+            const float size_pixels = IM_ROUND(source_config->SizePoints * dpi_set[i]);
+            if (i == 0)
+                source_config->SizePixels = size_pixels;        // First config us scaled in-place.
+            else
+            {
+                // Create duplicate scaled fonts for all other configs.
+                ImFontConfig new_config_template = *source_config;
+                new_config_template.DstFont = NULL;
+                new_config_template.SizePixels = size_pixels;
+                // A little lie that prevents AddFont() from making a copy of font data.
+                new_config_template.FontDataOwnedByAtlas = true;
+                ImFont* new_font = AddFont(&new_config_template);
+                new_font->FontID = source_config->DstFont->FontID;
+                ImFontConfig* new_config = &ConfigData.back();
+                assert(new_config->DstFont == new_font);
+                // Correct our lie, font data is really owned by source_config.
+                new_config->FontDataOwnedByAtlas = false;
+            }
+        }
+    }
+}
+
+ImFont* ImFontAtlas::MapFontToDpi(ImFont* base_font, float dpi)
+{
+    float expect_pixel_size = IM_ROUND(base_font->ConfigData->SizePoints * dpi);
+    for (int i = 0; i < Fonts.Size; i++)
+    {
+        ImFont* font = Fonts[i];
+        if (font->FontID == base_font->FontID && font->ConfigData->SizePixels == expect_pixel_size)
+            return font;
+    }
+    return base_font;
 }
 
 bool    ImFontAtlas::Build()
@@ -2620,6 +2732,7 @@ ImFont::ImFont()
     Ascent = Descent = 0.0f;
     MetricsTotalSurface = 0;
     FontScaleRatioInv = 1.0f;
+    FontID = 0;
     memset(Used4kPagesMap, 0, sizeof(Used4kPagesMap));
 }
 

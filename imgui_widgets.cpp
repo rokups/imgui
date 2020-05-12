@@ -3712,6 +3712,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (is_password && !is_displaying_hint)
     {
         ImFont* font = g.Font;
+        if (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts)
+            font = g.IO.Fonts->MapFontToDpi(font, window->Viewport->DpiScale);
         const ImFontGlyph* glyph = font->FindGlyph('*');
         ImFont* password_font = &g.InputTextPasswordFont;
         password_font->FontSize = font->FontSize;
