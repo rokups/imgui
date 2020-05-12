@@ -4209,7 +4209,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
             ImU32 bg_color = GetColorU32(ImGuiCol_TextSelectedBg, render_cursor ? 1.0f : 0.6f); // FIXME: current code flow mandate that render_cursor is always true here, we are leaving the transparent one for tests.
             float bg_offy_up = is_multiline ? 0.0f : -style.PointSizeRound;    // FIXME: those offsets should be part of the style? they don't play so well with multi-line selection.
-            float bg_offy_dn = is_multiline ? 0.0f : 2.0f * style.PointSizeRound;
+            float bg_offy_dn = is_multiline ? 0.0f : IM_FLOOR(2.0f * style.PointSize);
             ImVec2 rect_pos = draw_pos + select_start_offset - draw_scroll;
             for (const ImWchar* p = text_selected_begin; p < text_selected_end; )
             {
@@ -6634,7 +6634,7 @@ bool    ImGui::BeginTabBarEx(ImGuiTabBar* tab_bar, const ImRect& tab_bar_bb, ImG
 
     // Draw separator
     const ImU32 col = GetColorU32((flags & ImGuiTabBarFlags_IsFocused) ? ImGuiCol_TabActive : ImGuiCol_TabUnfocusedActive);
-    const float y = tab_bar->BarRect.Max.y - 1.0f;
+    const float y = tab_bar->BarRect.Max.y - g.Style.PointSizeRound;
     {
         const float separator_min_x = tab_bar->BarRect.Min.x - IM_FLOOR(window->WindowPadding.x * 0.5f);
         const float separator_max_x = tab_bar->BarRect.Max.x + IM_FLOOR(window->WindowPadding.x * 0.5f);
