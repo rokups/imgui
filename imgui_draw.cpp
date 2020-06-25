@@ -378,9 +378,9 @@ void ImDrawList::_ResetForNewFrame()
 {
     // Verify that the ImDrawCmd fields we want to memcmp() are contiguous in memory.
     // (those should be IM_STATIC_ASSERT() in theory but with our pre C++11 setup the whole check doesn't compile with GCC)
-    IM_ASSERT(IM_OFFSETOF(ImDrawCmd, ClipRect) == 0);
-    IM_ASSERT(IM_OFFSETOF(ImDrawCmd, TextureId) == sizeof(ImVec4));
-    IM_ASSERT(IM_OFFSETOF(ImDrawCmd, VtxOffset) == sizeof(ImVec4) + sizeof(ImTextureID));
+    IM_STATIC_ASSERT(IM_OFFSETOF(ImDrawCmd, ClipRect) == 0);
+    IM_STATIC_ASSERT(IM_OFFSETOF(ImDrawCmd, TextureId) == sizeof(ImVec4));
+    IM_STATIC_ASSERT(IM_OFFSETOF(ImDrawCmd, VtxOffset) == sizeof(ImVec4) + sizeof(ImTextureID));
 
     CmdBuffer.resize(0);
     IdxBuffer.resize(0);
@@ -655,8 +655,8 @@ void ImDrawList::PrimQuadUV(const ImVec2& a, const ImVec2& b, const ImVec2& c, c
 
 // On AddPolyline() and AddConvexPolyFilled() we intentionally avoid using ImVec2 and superfluous function calls to optimize debug/non-inlined builds.
 // Those macros expects l-values.
-#define IM_NORMALIZE2F_OVER_ZERO(VX,VY)     do { float d2 = VX*VX + VY*VY; if (d2 > 0.0f) { float inv_len = 1.0f / ImSqrt(d2); VX *= inv_len; VY *= inv_len; } } while (0)
-#define IM_FIXNORMAL2F(VX,VY)               do { float d2 = VX*VX + VY*VY; if (d2 < 0.5f) d2 = 0.5f; float inv_lensq = 1.0f / d2; VX *= inv_lensq; VY *= inv_lensq; } while (0)
+#define IM_NORMALIZE2F_OVER_ZERO(VX,VY)     do { float d2 = (VX)*(VX) + (VY)*(VY); if (d2 > 0.0f) { float inv_len = 1.0f / ImSqrt(d2); (VX) *= inv_len; (VY) *= inv_len; } } while (0)
+#define IM_FIXNORMAL2F(VX,VY)               do { float d2 = (VX)*(VX) + (VY)*(VY); if (d2 < 0.5f) d2 = 0.5f; float inv_lensq = 1.0f / d2; (VX) *= inv_lensq; (VY) *= inv_lensq; } while (0)
 
 // TODO: Thickness anti-aliased lines cap are missing their AA fringe.
 // We avoid using the ImVec2 math operators here to reduce cost to a minimum for debug/non-inlined builds.
@@ -1344,7 +1344,7 @@ void ImDrawListSplitter::ClearFreeMemory()
     for (int i = 0; i < _Channels.Size; i++)
     {
         if (i == _Current)
-            memset(&_Channels[i], 0, sizeof(_Channels[i]));  // Current channel is a copy of CmdBuffer/IdxBuffer, don't destruct again
+            memset(&_Channels[i], 0, sizeof(_Channels[i]));  // Current channel is a copy of CmdBuffer/IdxBuffer, don't destruct again, NOLINT(bugprone-undefined-memory-manipulation)
         _Channels[i]._CmdBuffer.clear();
         _Channels[i]._IdxBuffer.clear();
     }
@@ -1364,7 +1364,7 @@ void ImDrawListSplitter::Split(ImDrawList* draw_list, int channels_count)
     // Channels[] (24/32 bytes each) hold storage that we'll swap with draw_list->_CmdBuffer/_IdxBuffer
     // The content of Channels[0] at this point doesn't matter. We clear it to make state tidy in a debugger but we don't strictly need to.
     // When we switch to the next channel, we'll copy draw_list->_CmdBuffer/_IdxBuffer into Channels[0] and then Channels[1] into draw_list->CmdBuffer/_IdxBuffer
-    memset(&_Channels[0], 0, sizeof(ImDrawChannel));
+    memset(&_Channels[0], 0, sizeof(ImDrawChannel));    // NOLINT(bugprone-undefined-memory-manipulation)
     for (int i = 1; i < channels_count; i++)
     {
         if (i >= old_channels_count)
@@ -1463,11 +1463,11 @@ void ImDrawListSplitter::SetCurrentChannel(ImDrawList* draw_list, int idx)
         return;
 
     // Overwrite ImVector (12/16 bytes), four times. This is merely a silly optimization instead of doing .swap()
-    memcpy(&_Channels.Data[_Current]._CmdBuffer, &draw_list->CmdBuffer, sizeof(draw_list->CmdBuffer));
-    memcpy(&_Channels.Data[_Current]._IdxBuffer, &draw_list->IdxBuffer, sizeof(draw_list->IdxBuffer));
+    memcpy(&_Channels.Data[_Current]._CmdBuffer, &draw_list->CmdBuffer, sizeof(draw_list->CmdBuffer));  // NOLINT(bugprone-undefined-memory-manipulation)
+    memcpy(&_Channels.Data[_Current]._IdxBuffer, &draw_list->IdxBuffer, sizeof(draw_list->IdxBuffer));  // NOLINT(bugprone-undefined-memory-manipulation)
     _Current = idx;
-    memcpy(&draw_list->CmdBuffer, &_Channels.Data[idx]._CmdBuffer, sizeof(draw_list->CmdBuffer));
-    memcpy(&draw_list->IdxBuffer, &_Channels.Data[idx]._IdxBuffer, sizeof(draw_list->IdxBuffer));
+    memcpy(&draw_list->CmdBuffer, &_Channels.Data[idx]._CmdBuffer, sizeof(draw_list->CmdBuffer));       // NOLINT(bugprone-undefined-memory-manipulation)
+    memcpy(&draw_list->IdxBuffer, &_Channels.Data[idx]._IdxBuffer, sizeof(draw_list->IdxBuffer));       // NOLINT(bugprone-undefined-memory-manipulation)
     draw_list->_IdxWritePtr = draw_list->IdxBuffer.Data + draw_list->IdxBuffer.Size;
 
     // If current command is used with different settings we need to add a new command
@@ -1831,7 +1831,7 @@ ImFont* ImFontAtlas::AddFontFromFileTTF(const char* filename, float size_pixels,
     void* data = ImFileLoadToMemory(filename, "rb", &data_size, 0);
     if (!data)
     {
-        IM_ASSERT_USER_ERROR(0, "Could not load font file!");
+        IM_ASSERT_USER_ERROR(0, "Could not load font file!");   // NOLINT(misc-static-assert)
         return NULL;
     }
     ImFontConfig font_cfg = font_cfg_template ? *font_cfg_template : ImFontConfig();
@@ -1990,7 +1990,7 @@ struct ImFontBuildDstData
 
 static void UnpackBitVectorToFlatIndexList(const ImBitVector* in, ImVector<int>* out)
 {
-    IM_ASSERT(sizeof(in->Storage.Data[0]) == sizeof(int));
+    IM_STATIC_ASSERT(sizeof(in->Storage.Data[0]) == sizeof(int));
     const ImU32* it_begin = in->Storage.begin();
     const ImU32* it_end = in->Storage.end();
     for (const ImU32* it = it_begin; it < it_end; it++)
@@ -2018,8 +2018,8 @@ bool    ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
     ImVector<ImFontBuildDstData> dst_tmp_array;
     src_tmp_array.resize(atlas->ConfigData.Size);
     dst_tmp_array.resize(atlas->Fonts.Size);
-    memset(src_tmp_array.Data, 0, (size_t)src_tmp_array.size_in_bytes());
-    memset(dst_tmp_array.Data, 0, (size_t)dst_tmp_array.size_in_bytes());
+    memset(src_tmp_array.Data, 0, (size_t)src_tmp_array.size_in_bytes());  // NOLINT(bugprone-undefined-memory-manipulation)
+    memset(dst_tmp_array.Data, 0, (size_t)dst_tmp_array.size_in_bytes());  // NOLINT(bugprone-undefined-memory-manipulation)
 
     // 1. Initialize font loading structure, check font data validity
     for (int src_i = 0; src_i < atlas->ConfigData.Size; src_i++)
@@ -2851,7 +2851,7 @@ const char* ImFont::CalcWordWrapPositionA(float scale, const char* text, const c
     const char* s = text;
     while (s < text_end)
     {
-        unsigned int c = (unsigned int)*s;
+        unsigned int c = (unsigned int)(unsigned char)*s;
         const char* next_s;
         if (c < 0x80)
             next_s = s + 1;
@@ -2968,7 +2968,7 @@ ImVec2 ImFont::CalcTextSizeA(float size, float max_width, float wrap_width, cons
 
         // Decode and advance source
         const char* prev_s = s;
-        unsigned int c = (unsigned int)*s;
+        unsigned int c = (unsigned int)(unsigned char)*s;
         if (c < 0x80)
         {
             s += 1;
@@ -3111,7 +3111,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         }
 
         // Decode and advance source
-        unsigned int c = (unsigned int)*s;
+        unsigned int c = (unsigned int)(unsigned char)*s;
         if (c < 0x80)
         {
             s += 1;
@@ -3254,7 +3254,7 @@ void ImGui::RenderArrow(ImDrawList* draw_list, ImVec2 pos, ImU32 col, ImGuiDir d
         break;
     case ImGuiDir_None:
     case ImGuiDir_COUNT:
-        IM_ASSERT(0);
+        IM_ASSERT(0);   // NOLINT(misc-static-assert)
         break;
     }
     draw_list->AddTriangleFilled(center + a, center + b, center + c, col);
@@ -3291,7 +3291,7 @@ void ImGui::RenderMouseCursor(ImDrawList* draw_list, ImVec2 pos, float scale, Im
     if (font_atlas->GetMouseCursorTexData(mouse_cursor, &offset, &size, &uv[0], &uv[2]))
     {
         pos -= offset;
-        const ImTextureID tex_id = font_atlas->TexID;
+        const ImTextureID tex_id = font_atlas->TexID;   // NOLINT(misc-misplaced-const)
         draw_list->PushTextureID(tex_id);
         draw_list->AddImage(tex_id, pos + ImVec2(1,0)*scale, pos + ImVec2(1,0)*scale + size*scale, uv[2], uv[3], col_shadow);
         draw_list->AddImage(tex_id, pos + ImVec2(2,0)*scale, pos + ImVec2(2,0)*scale + size*scale, uv[2], uv[3], col_shadow);
@@ -3396,12 +3396,12 @@ void ImGui::RenderColorRectWithAlphaCheckerboard(ImDrawList* draw_list, ImVec2 p
         draw_list->AddRectFilled(p_min, p_max, col_bg1, rounding, rounding_corners_flags);
 
         int yi = 0;
-        for (float y = p_min.y + grid_off.y; y < p_max.y; y += grid_step, yi++)
+        for (float y = p_min.y + grid_off.y; y < p_max.y; y += grid_step, yi++)                                 // NOLINT(clang-analyzer-security.FloatLoopCounter)
         {
             float y1 = ImClamp(y, p_min.y, p_max.y), y2 = ImMin(y + grid_step, p_max.y);
             if (y2 <= y1)
                 continue;
-            for (float x = p_min.x + grid_off.x + (yi & 1) * grid_step; x < p_max.x; x += grid_step * 2.0f)
+            for (float x = p_min.x + grid_off.x + (yi & 1) * grid_step; x < p_max.x; x += grid_step * 2.0f)     // NOLINT(clang-analyzer-security.FloatLoopCounter, cert-flp30-c)
             {
                 float x1 = ImClamp(x, p_min.x, p_max.x), x2 = ImMin(x + grid_step, p_max.x);
                 if (x2 <= x1)
@@ -3529,7 +3529,7 @@ static unsigned int stb_decompress(unsigned char *output, const unsigned char *i
                     return 0;
                 return olen;
             } else {
-                IM_ASSERT(0); /* NOTREACHED */
+                IM_ASSERT(0); // NOTREACHED, NOLINT(misc-static-assert)
                 return 0;
             }
         }

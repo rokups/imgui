@@ -477,6 +477,7 @@ void ImGui::ShowDemoWindow(bool* p_open)
     ImGui::End();
 }
 
+// NOLINTNEXTLINE(readability-function-size)
 static void ShowDemoWindowWidgets()
 {
     if (!ImGui::CollapsingHeader("Widgets"))
@@ -1276,8 +1277,8 @@ static void ShowDemoWindowWidgets()
         // We probably want an API passing floats and user provide sample rate/count.
         struct Funcs
         {
-            static float Sin(void*, int i) { return sinf(i * 0.1f); }
-            static float Saw(void*, int i) { return (i & 1) ? 1.0f : -1.0f; }
+            static float Sin(void* /*unused*/, int i) { return sinf(i * 0.1f); }
+            static float Saw(void* /*unused*/, int i) { return (i & 1) ? 1.0f : -1.0f; }
         };
         static int func_type = 0, display_count = 70;
         ImGui::Separator();
@@ -3335,7 +3336,7 @@ static void ShowDemoWindowMisc()
         if (ImGui::TreeNode("Mouse cursors"))
         {
             const char* mouse_cursors_names[] = { "Arrow", "TextInput", "ResizeAll", "ResizeNS", "ResizeEW", "ResizeNESW", "ResizeNWSE", "Hand", "NotAllowed" };
-            IM_ASSERT(IM_ARRAYSIZE(mouse_cursors_names) == ImGuiMouseCursor_COUNT);
+            IM_ASSERT(IM_ARRAYSIZE(mouse_cursors_names) == ImGuiMouseCursor_COUNT);     // NOLINT(misc-static-assert)
 
             ImGuiMouseCursor current = ImGui::GetMouseCursor();
             ImGui::Text("Current mouse cursor = %d: %s", current, mouse_cursors_names[current]);
@@ -3611,7 +3612,7 @@ static void NodeFont(ImFont* font)
             {
                 // We use ImFont::RenderChar as a shortcut because we don't have UTF-8 conversion functions
                 // available here and thus cannot easily generate a zero-terminated UTF-8 encoded string.
-                ImVec2 cell_p1(base_pos.x + (n % 16) * (cell_size + cell_spacing), base_pos.y + (n / 16) * (cell_size + cell_spacing));
+                ImVec2 cell_p1(base_pos.x + (n % 16) * (cell_size + cell_spacing), base_pos.y + (n / 16.0f) * (cell_size + cell_spacing));
                 ImVec2 cell_p2(cell_p1.x + cell_size, cell_p1.y + cell_size);
                 const ImFontGlyph* glyph = font->FindGlyphNoFallback((ImWchar)(base + n));
                 draw_list->AddRect(cell_p1, cell_p2, glyph ? IM_COL32(255, 255, 255, 100) : IM_COL32(255, 255, 255, 50));
@@ -3953,7 +3954,7 @@ static void ShowExampleMenuFile()
 
     if (ImGui::BeginMenu("Disabled", false)) // Disabled
     {
-        IM_ASSERT(0);
+        IM_ASSERT(0);   // NOLINT(misc-static-assert)
     }
     if (ImGui::MenuItem("Checked", NULL, true)) {}
     if (ImGui::MenuItem("Quit", "Alt+F4")) {}
@@ -4799,7 +4800,7 @@ static void ShowExampleAppSimpleOverlay(bool* p_open)
 // Demonstrate using "##" and "###" in identifiers to manipulate ID generation.
 // This apply to all regular items as well.
 // Read FAQ section "How can I have multiple widgets with the same label?" for details.
-static void ShowExampleAppWindowTitles(bool*)
+static void ShowExampleAppWindowTitles(bool* /*unused*/)
 {
     // By default, Windows are uniquely identified by their title.
     // You can use the "##" and "###" markers to manipulate the display/ID.
