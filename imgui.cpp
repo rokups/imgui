@@ -1786,7 +1786,8 @@ void ImGui::ColorConvertHSVtoRGB(float h, float s, float v, float& out_r, float&
     case 2: out_r = p; out_g = v; out_b = t; break;
     case 3: out_r = p; out_g = q; out_b = v; break;
     case 4: out_r = t; out_g = p; out_b = v; break;
-    case 5: default: out_r = v; out_g = p; out_b = q; break;
+    case 5:
+    default: out_r = v; out_g = p; out_b = q; break;
     }
 }
 
