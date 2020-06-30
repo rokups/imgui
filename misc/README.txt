@@ -22,3 +22,8 @@ misc/single_file/
   We use this to validate compiling all *.cpp files in a same compilation unit.
   Users of that technique (also called "Unity builds") can generally provide this themselves,
   so we don't really recommend you use this in your projects.
+
+astyle.ini
+  Configuration file for AStyle code beautifier.
+  Dear ImGui uses a modified AStyle version whith several bugs fixed. It can be downloaded at
+  https://github.com/rokups/astyle/
