@@ -455,6 +455,8 @@ jobs:
 
     - name: Format Code
       run: |
-        astyle --project=misc/astyle.ini imgui* examples/**.cpp examples/**.h misc/**/*.h misc/**/*.cpp | grep 'Formatted '
+        text=$(astyle --project=misc/astyle.ini imgui* examples/**.cpp examples/**.h misc/**/*.h misc/**/*.cpp)
+        echo $text | grep 'Formatted'
+        echo "EXIT: $?"
         [[ $? == 1 ]]
         exit $?
