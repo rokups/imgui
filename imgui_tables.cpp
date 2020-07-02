@@ -82,6 +82,7 @@
 //-----------------------------------------------------------------------------
 
 // Configuration
+static const float TABLE_BORDER_SIZE                     = 1.0f;    // FIXME-TABLE: Currently hard-coded.
 static const float TABLE_RESIZE_SEPARATOR_HALF_THICKNESS = 4.0f;    // Extend outside inner borders.
 static const float TABLE_RESIZE_SEPARATOR_FEEDBACK_TIMER = 0.06f;   // Delay/timer before making the hover feedback (color+cursor) visible because tables/columns tends to be more cramped.
 
@@ -1104,6 +1105,7 @@ void ImGui::TableDrawBorders(ImGuiTable* table)
     ImDrawList* outer_drawlist = outer_window->DrawList;
 
     // Draw inner border and resizing feedback
+    const float border_size = TABLE_BORDER_SIZE;
     const float draw_y1 = table->OuterRect.Min.y;
     float draw_y2_base = (table->FreezeRowsCount >= 1 ? table->OuterRect.Min.y : table->WorkRect.Min.y) + table->LastFirstRowHeight;
     float draw_y2_full = table->OuterRect.Max.y;
@@ -1119,7 +1121,7 @@ void ImGui::TableDrawBorders(ImGuiTable* table)
     }
 
     if ((table->Flags & ImGuiTableFlags_BordersVOuter) && (table->InnerWindow == table->OuterWindow))
-        inner_drawlist->AddLine(ImVec2(table->OuterRect.Min.x, draw_y1), ImVec2(table->OuterRect.Min.x, draw_y2_base), border_base_col, 1.0f);
+        inner_drawlist->AddLine(ImVec2(table->OuterRect.Min.x, draw_y1), ImVec2(table->OuterRect.Min.x, draw_y2_base), border_base_col, border_size);
 
     if (table->Flags & ImGuiTableFlags_BordersVInner)
     {
@@ -1148,7 +1150,7 @@ void ImGui::TableDrawBorders(ImGuiTable* table)
                 float draw_y2 = draw_y2_base;
                 if (is_hovered || is_resized || (table->FreezeColumnsCount != -1 && table->FreezeColumnsCount == order_n + 1))
                     draw_y2 = draw_y2_full;
-                inner_drawlist->AddLine(ImVec2(column->MaxX, draw_y1), ImVec2(column->MaxX, draw_y2), col, 1.0f);
+                inner_drawlist->AddLine(ImVec2(column->MaxX, draw_y1), ImVec2(column->MaxX, draw_y2), col, border_size);
             }
         }
     }
@@ -1166,16 +1168,18 @@ void ImGui::TableDrawBorders(ImGuiTable* table)
         if (inner_window != outer_window)
             outer_border.Expand(1.0f);
         if ((table->Flags & ImGuiTableFlags_BordersOuter) == ImGuiTableFlags_BordersOuter)
-            outer_drawlist->AddRect(outer_border.Min, outer_border.Max, outer_col);
+        {
+            outer_drawlist->AddRect(outer_border.Min, outer_border.Max, outer_col, 0.0f, ~0, border_size);
+        }
         else if (table->Flags & ImGuiTableFlags_BordersVOuter)
         {
-            outer_drawlist->AddLine(outer_border.Min, ImVec2(outer_border.Min.x, outer_border.Max.y), outer_col);
-            outer_drawlist->AddLine(ImVec2(outer_border.Max.x, outer_border.Min.y), outer_border.Max, outer_col);
+            outer_drawlist->AddLine(outer_border.Min, ImVec2(outer_border.Min.x, outer_border.Max.y), outer_col, border_size);
+            outer_drawlist->AddLine(ImVec2(outer_border.Max.x, outer_border.Min.y), outer_border.Max, outer_col, border_size);
         }
         else if (table->Flags & ImGuiTableFlags_BordersHOuter)
         {
-            outer_drawlist->AddLine(outer_border.Min, ImVec2(outer_border.Max.x, outer_border.Min.y), outer_col);
-            outer_drawlist->AddLine(ImVec2(outer_border.Min.x, outer_border.Max.y), outer_border.Max, outer_col);
+            outer_drawlist->AddLine(outer_border.Min, ImVec2(outer_border.Max.x, outer_border.Min.y), outer_col, border_size);
+            outer_drawlist->AddLine(ImVec2(outer_border.Min.x, outer_border.Max.y), outer_border.Max, outer_col, border_size);
         }
     }
     if ((table->Flags & ImGuiTableFlags_BordersHInner) && table->RowPosY2 < table->OuterRect.Max.y)
@@ -1183,7 +1187,7 @@ void ImGui::TableDrawBorders(ImGuiTable* table)
         // Draw bottom-most row border
         const float border_y = table->RowPosY2;
         if (border_y >= table->BackgroundClipRect.Min.y && border_y < table->BackgroundClipRect.Max.y)
-            inner_drawlist->AddLine(ImVec2(table->BorderX1, border_y), ImVec2(table->BorderX2, border_y), table->BorderColorLight);
+            inner_drawlist->AddLine(ImVec2(table->BorderX1, border_y), ImVec2(table->BorderX2, border_y), table->BorderColorLight, border_size);
     }
 }
 
@@ -1650,6 +1654,7 @@ void    ImGui::TableEndRow(ImGuiTable* table)
 
         // Decide of top border color
         ImU32 border_col = 0;
+        const float border_size = TABLE_BORDER_SIZE;
         if (table->CurrentRow != 0 || table->InnerWindow == table->OuterWindow)
         {
             if (table->Flags & ImGuiTableFlags_BordersHInner)
@@ -1688,12 +1693,12 @@ void    ImGui::TableEndRow(ImGuiTable* table)
 
         // Draw top border
         if (border_col && bg_y1 >= table->BackgroundClipRect.Min.y && bg_y1 < table->BackgroundClipRect.Max.y)
-            window->DrawList->AddLine(ImVec2(table->BorderX1, bg_y1), ImVec2(table->BorderX2, bg_y1), border_col);
+            window->DrawList->AddLine(ImVec2(table->BorderX1, bg_y1), ImVec2(table->BorderX2, bg_y1), border_col, border_size);
 
         // Draw bottom border at the row unfreezing mark (always strong)
         if (draw_stong_bottom_border)
             if (bg_y2 >= table->BackgroundClipRect.Min.y && bg_y2 < table->BackgroundClipRect.Max.y)
-                window->DrawList->AddLine(ImVec2(table->BorderX1, bg_y2), ImVec2(table->BorderX2, bg_y2), table->BorderColorStrong);
+                window->DrawList->AddLine(ImVec2(table->BorderX1, bg_y2), ImVec2(table->BorderX2, bg_y2), table->BorderColorStrong, border_size);
     }
 
     // End frozen rows (when we are past the last frozen row line, teleport cursor and alter clipping rectangle)
