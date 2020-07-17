@@ -63,6 +63,11 @@
 #else
 #define GLFW_HAS_NEW_CURSORS          (0)
 #endif
+#ifdef GLFW_MOUSE_PASSTHROUGH
+#define GLFW_HAS_MOUSE_PASSTHROUGH    (GLFW_VERSION_MAJOR * 1000 + GLFW_VERSION_MINOR * 100 >= 3400) // 3.4+ GLFW_MOUSE_PASSTHROUGH
+#else
+#define GLFW_HAS_MOUSE_PASSTHROUGH    (0)
+#endif
 
 // Data
 enum GlfwClientApi
@@ -166,7 +171,7 @@ static bool ImGui_ImplGlfw_Init(GLFWwindow* window, bool install_callbacks, Glfw
     io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;         // We can honor GetMouseCursor() values (optional)
     io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos;          // We can honor io.WantSetMousePos requests (optional, rarely used)
     io.BackendFlags |= ImGuiBackendFlags_PlatformHasViewports;    // We can create multi-viewports on the Platform side (optional)
-#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32)
+#if (GLFW_HAS_WINDOW_HOVERED && defined(_WIN32)) || GLFW_HAS_MOUSE_PASSTHROUGH
     io.BackendFlags |= ImGuiBackendFlags_HasMouseHoveredViewport; // We can set io.MouseHoveredViewport correctly (optional, not easy)
 #endif
     io.BackendPlatformName = "imgui_impl_glfw";
@@ -348,8 +353,12 @@ static void ImGui_ImplGlfw_UpdateMousePosAndButtons()
         // rectangles and last focused time of every viewports it knows about. It will be unaware of other windows that may be sitting between or over your windows.
         // [GLFW] FIXME: This is currently only correct on Win32. See what we do below with the WM_NCHITTEST, missing an equivalent for other systems.
         // See https://github.com/glfw/glfw/issues/1236 if you want to help in making this a GLFW feature.
-#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32)
-        if (glfwGetWindowAttrib(window, GLFW_HOVERED) && !(viewport->Flags & ImGuiViewportFlags_NoInputs))
+#if (GLFW_HAS_WINDOW_HOVERED && defined(_WIN32)) || GLFW_HAS_MOUSE_PASSTHROUGH
+        const bool window_no_input = (viewport->Flags & ImGuiViewportFlags_NoInputs) != 0;
+#ifdef GLFW_HAS_MOUSE_PASSTHROUGH
+        glfwSetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH, window_no_input);
+#endif
+        if (glfwGetWindowAttrib(window, GLFW_HOVERED) && !window_no_input)
             io.MouseHoveredViewport = viewport->ID;
 #endif
     }
@@ -586,7 +595,7 @@ static void ImGui_ImplGlfw_DestroyWindow(ImGuiViewport* viewport)
     {
         if (data->WindowOwned)
         {
-#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32)
+#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32) && !GLFW_HAS_MOUSE_PASSTHROUGH
             HWND hwnd = (HWND)viewport->PlatformHandleRaw;
             ::RemovePropA(hwnd, "IMGUI_VIEWPORT");
 #endif
@@ -600,7 +609,7 @@ static void ImGui_ImplGlfw_DestroyWindow(ImGuiViewport* viewport)
 
 // We have submitted https://github.com/glfw/glfw/pull/1568 to allow GLFW to support "transparent inputs".
 // In the meanwhile we implement custom per-platform workarounds here (FIXME-VIEWPORT: Implement same work-around for Linux/OSX!)
-#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32)
+#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32) && !GLFW_HAS_MOUSE_PASSTHROUGH
 static WNDPROC g_GlfwWndProc = NULL;
 static LRESULT CALLBACK WndProcNoInputs(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -634,7 +643,7 @@ static void ImGui_ImplGlfw_ShowWindow(ImGuiViewport* viewport)
     }
 
     // GLFW hack: install hook for WM_NCHITTEST message handler
-#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32)
+#if GLFW_HAS_WINDOW_HOVERED && defined(_WIN32) && !GLFW_HAS_MOUSE_PASSTHROUGH
     ::SetPropA(hwnd, "IMGUI_VIEWPORT", viewport);
     if (g_GlfwWndProc == NULL)
         g_GlfwWndProc = (WNDPROC)::GetWindowLongPtr(hwnd, GWLP_WNDPROC);
