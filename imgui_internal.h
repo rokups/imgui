@@ -1914,6 +1914,7 @@ struct ImGuiTableColumn
     float                   ContentMaxXUnfrozen;
     float                   ContentMaxXHeadersUsed;         // Contents maximum position for headers rows (regardless of freezing). TableHeader() automatically softclip itself + report ideal desired size, to avoid creating extraneous draw calls
     float                   ContentMaxXHeadersIdeal;
+    ImU32                   ColumnBgColor[2];               // Background color override for the whole column.
     ImS16                   NameOffset;                     // Offset into parent ColumnsNames[]
     bool                    IsEnabled;                      // Is the column not marked Hidden by the user? (even if off view, e.g. clipped by scrolling).
     bool                    IsEnabledNextFrame;
@@ -1984,6 +1985,7 @@ struct ImGuiTable
     ImGuiTableRowFlags          LastRowFlags : 16;
     int                         RowBgColorCounter;          // Counter for alternating background colors (can be fast-forwarded by e.g clipper), not same as CurrentRow because header rows typically don't increase this.
     ImU32                       RowBgColor[2];              // Background color override for current row.
+    ImU64                       ColumnsBgColorSetMask;
     ImU32                       BorderColorStrong;
     ImU32                       BorderColorLight;
     float                       BorderX1;

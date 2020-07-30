@@ -402,6 +402,7 @@ bool    ImGui::BeginTableEx(const char* name, ImGuiID id, int columns_count, ImG
     table->IsUnfrozen = true;
     table->DeclColumnsCount = 0;
     table->RightMostEnabledColumn = -1;
+    table->ColumnsBgColorSetMask = 0x00;
 
     // Using opaque colors facilitate overlapping elements of the grid
     table->BorderColorStrong = GetColorU32(ImGuiCol_TableBorderStrong);
@@ -2651,6 +2652,17 @@ void ImGui::TableSetBgColor(ImGuiTableBgTarget bg_target, ImU32 color, int colum
         table->RowBgColor[bg_idx] = color;
         break;
     }
+#if 0
+    case ImGuiTableBgTarget_ColumnBg0:
+    case ImGuiTableBgTarget_ColumnBg1:
+    {
+        if (column_n == -1)
+            column_n = table->CurrentColumn;
+        int bg_idx = (bg_target == ImGuiTableBgTarget_ColumnBg1) ? 1 : 0;
+        table->Columns[column_n].ColumnBgColor[bg_idx] = color;
+        break;
+    }
+#endif
     default:
         IM_ASSERT(0);
     }
