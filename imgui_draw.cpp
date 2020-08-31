@@ -189,7 +189,7 @@ using namespace IMGUI_STB_NAMESPACE;
 
 void ImGui::StyleColorsDark(ImGuiStyle* dst)
 {
-    ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
+    ImGuiStyle* style = dst ? dst : &ImGui::GetStyleTemplate();
     ImVec4* colors = style->Colors;
 
     colors[ImGuiCol_Text]                   = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
@@ -251,7 +251,7 @@ void ImGui::StyleColorsDark(ImGuiStyle* dst)
 
 void ImGui::StyleColorsClassic(ImGuiStyle* dst)
 {
-    ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
+    ImGuiStyle* style = dst ? dst : &ImGui::GetStyleTemplate();
     ImVec4* colors = style->Colors;
 
     colors[ImGuiCol_Text]                   = ImVec4(0.90f, 0.90f, 0.90f, 1.00f);
@@ -314,7 +314,7 @@ void ImGui::StyleColorsClassic(ImGuiStyle* dst)
 // Those light colors are better suited with a thicker font than the default one + FrameBorder
 void ImGui::StyleColorsLight(ImGuiStyle* dst)
 {
-    ImGuiStyle* style = dst ? dst : &ImGui::GetStyle();
+    ImGuiStyle* style = dst ? dst : &ImGui::GetStyleTemplate();
     ImVec4* colors = style->Colors;
 
     colors[ImGuiCol_Text]                   = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
@@ -714,7 +714,7 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
     const bool closed = (flags & ImDrawFlags_Closed) != 0;
     const ImVec2 opaque_uv = _Data->TexUvWhitePixel;
     const int count = closed ? points_count : points_count - 1; // The number of line segments we need to draw
-    const bool thick_line = (thickness > _FringeScale);
+    const bool thick_line = (thickness > _FringeScale); // FIXME-DPI: What is a thick line at DPI scale 1.5? What about dpi scale scale 2.0?
 
     if (Flags & ImDrawListFlags_AntiAliasedLines)
     {
@@ -1966,6 +1966,7 @@ ImFontAtlas::ImFontAtlas()
 {
     memset(this, 0, sizeof(*this));
     TexGlyphPadding = 1;
+    Scale = 1.0f;
     PackIdMouseCursors = PackIdLines = -1;
 }
 
@@ -2089,6 +2090,9 @@ ImFont* ImFontAtlas::AddFont(const ImFontConfig* font_cfg)
 
     if (new_font_cfg.DstFont->EllipsisChar == (ImWchar)-1)
         new_font_cfg.DstFont->EllipsisChar = font_cfg->EllipsisChar;
+
+    if (Scale != 1.0f)
+        new_font_cfg.SizePixels = IM_ROUND(new_font_cfg.SizePixels * Scale);
 
     // Invalidate texture
     ClearTexData();
@@ -2272,6 +2276,46 @@ bool    ImFontAtlas::Build()
 
     // Build
     return builder_io->FontBuilder_Build(this);
+}
+
+void     ImFontAtlas::CloneInto(ImFontAtlas* dest, float scale)
+{
+    IM_ASSERT(Locked == false && "Source atlas must not be locked!");
+    IM_ASSERT(dest->Locked == false && "Destination atlas must not be locked!");
+    dest->Clear();
+
+    // User input
+    dest->Flags = Flags;
+    dest->TexDesiredWidth = TexDesiredWidth;
+    dest->TexGlyphPadding = TexGlyphPadding;
+    dest->Scale = scale;
+
+    // Fonts
+    for (int i = 0; i < ConfigData.Size; i++)
+    {
+        ImFontConfig config = ConfigData[i];
+        config.DstFont = NULL;
+        config.FontDataOwnedByAtlas = false;
+        memset(config.Name, 0, IM_ARRAYSIZE(config.Name));
+        dest->AddFont(&config);
+    }
+    IM_ASSERT(Fonts.Size == dest->Fonts.Size);
+    IM_ASSERT(ConfigData.Size == dest->ConfigData.Size);
+
+    // Custom rects
+    for (int i = 0; i < CustomRects.Size; i++)
+    {
+        ImFontAtlasCustomRect& rect = CustomRects[i];
+        if (rect.Font != NULL)
+        {
+            ImFont* dest_font = dest->Fonts[Fonts.index_from_ptr(Fonts.find(rect.Font))];
+            dest->AddCustomRectFontGlyph(dest_font, rect.GlyphID, rect.Width, rect.Height, rect.GlyphAdvanceX, rect.GlyphOffset);
+        }
+        else
+        {
+            dest->AddCustomRectRegular(rect.Width, rect.Height);
+        }
+    }
 }
 
 void    ImFontAtlasBuildMultiplyCalcLookupTable(unsigned char out_table[256], float in_brighten_factor)

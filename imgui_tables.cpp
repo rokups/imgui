@@ -3771,6 +3771,7 @@ ImGuiID ImGui::GetColumnsID(const char* str_id, int columns_count)
 void ImGui::BeginColumns(const char* str_id, int columns_count, ImGuiOldColumnFlags flags)
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* window = GetCurrentWindow();
 
     IM_ASSERT(columns_count >= 1);
@@ -3798,7 +3799,7 @@ void ImGui::BeginColumns(const char* str_id, int columns_count, ImGuiOldColumnFl
     const float max_1 = window->WorkRect.Max.x + column_padding - ImMax(column_padding - window->WindowPadding.x, 0.0f);
     const float max_2 = window->WorkRect.Max.x + half_clip_extend_x;
     columns->OffMinX = window->DC.Indent.x - column_padding + ImMax(column_padding - window->WindowPadding.x, 0.0f);
-    columns->OffMaxX = ImMax(ImMin(max_1, max_2) - window->Pos.x, columns->OffMinX + 1.0f);
+    columns->OffMaxX = ImMax(ImMin(max_1, max_2) - window->Pos.x, columns->OffMinX + style.PointSizeRound);
     columns->LineMinY = columns->LineMaxY = window->DC.CursorPos.y;
 
     // Clear data if columns count changed
@@ -3823,7 +3824,7 @@ void ImGui::BeginColumns(const char* str_id, int columns_count, ImGuiOldColumnFl
         // Compute clipping rectangle
         ImGuiOldColumnData* column = &columns->Columns[n];
         float clip_x1 = IM_ROUND(window->Pos.x + GetColumnOffset(n));
-        float clip_x2 = IM_ROUND(window->Pos.x + GetColumnOffset(n + 1) - 1.0f);
+        float clip_x2 = IM_ROUND(window->Pos.x + GetColumnOffset(n + 1) - style.PointSizeRound);
         column->ClipRect = ImRect(clip_x1, -FLT_MAX, clip_x2, +FLT_MAX);
         column->ClipRect.ClipWithFull(window->ClipRect);
     }
@@ -3903,6 +3904,7 @@ void ImGui::NextColumn()
 void ImGui::EndColumns()
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* window = GetCurrentWindow();
     ImGuiOldColumns* columns = window->DC.CurrentColumns;
     IM_ASSERT(columns != NULL);
@@ -3953,7 +3955,7 @@ void ImGui::EndColumns()
             // Draw column
             const ImU32 col = GetColorU32(held ? ImGuiCol_SeparatorActive : hovered ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator);
             const float xi = IM_FLOOR(x);
-            window->DrawList->AddLine(ImVec2(xi, y1 + 1.0f), ImVec2(xi, y2), col);
+            window->DrawList->AddLine(ImVec2(xi, y1 + style.PointSizeRound), ImVec2(xi, y2), col);
         }
 
         // Apply dragging after drawing the column lines, so our rendered lines are in sync with how items were displayed during the frame.

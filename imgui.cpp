@@ -1040,6 +1040,8 @@ ImGuiStyle::ImGuiStyle()
     AntiAliasedFill         = true;             // Enable anti-aliased filled shapes (rounded rectangles, circles, etc.).
     CurveTessellationTol    = 1.25f;            // Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
     CircleTessellationMaxError = 0.30f;         // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
+    PointSize               = 1.0f;             // Size of a point, in pixels. 1.0f on 96 DPI screens. Use this value to scale sizes independently of screen pixel density.
+    PointSizeRound          = 1.0f;             // = IM_ROUND(PointSize).
 
     // Default theme
     ImGui::StyleColorsDark(this);
@@ -1049,6 +1051,9 @@ ImGuiStyle::ImGuiStyle()
 // Important: This operation is lossy because we round all sizes to integer. If you need to change your scale multiples, call this over a freshly initialized ImGuiStyle structure rather than scaling multiple times.
 void ImGuiStyle::ScaleAllSizes(float scale_factor)
 {
+    IM_ASSERT(scale_factor >= 1.0f);
+    PointSize = scale_factor;
+    PointSizeRound = IM_ROUND(scale_factor);
     WindowPadding = ImFloor(WindowPadding * scale_factor);
     WindowRounding = ImFloor(WindowRounding * scale_factor);
     WindowMinSize = ImFloor(WindowMinSize * scale_factor);
@@ -1072,6 +1077,11 @@ void ImGuiStyle::ScaleAllSizes(float scale_factor)
     DisplayWindowPadding = ImFloor(DisplayWindowPadding * scale_factor);
     DisplaySafeAreaPadding = ImFloor(DisplaySafeAreaPadding * scale_factor);
     MouseCursorScale = ImFloor(MouseCursorScale * scale_factor);
+    WindowBorderSize = ImFloor(WindowBorderSize * scale_factor);
+    ChildBorderSize = ImFloor(ChildBorderSize * scale_factor);
+    PopupBorderSize = ImFloor(PopupBorderSize * scale_factor);
+    FrameBorderSize = ImFloor(FrameBorderSize * scale_factor);
+    TabBorderSize = ImFloor(TabBorderSize * scale_factor);
 }
 
 ImGuiIO::ImGuiIO()
@@ -2456,6 +2466,12 @@ ImGuiStyle& ImGui::GetStyle()
     return GImGui->Style;
 }
 
+ImGuiStyle& ImGui::GetStyleTemplate()
+{
+    IM_ASSERT(GImGui != NULL && "No current context. Did you call ImGui::CreateContext() and ImGui::SetCurrentContext() ?");
+    return GImGui->StyleTemplate;
+}
+
 ImU32 ImGui::GetColorU32(ImGuiCol idx, float alpha_mul)
 {
     ImGuiStyle& style = GImGui->Style;
@@ -2526,6 +2542,7 @@ struct ImGuiStyleVarInfo
     ImGuiDataType   Type;
     ImU32           Count;
     ImU32           Offset;
+    bool            Scale;
     void*           GetVarPtr(ImGuiStyle* style) const { return (void*)((unsigned char*)style + Offset); }
 };
 
@@ -2536,30 +2553,30 @@ static const ImGuiCol GWindowDockStyleColors[ImGuiWindowDockStyleCol_COUNT] =
 
 static const ImGuiStyleVarInfo GStyleVarInfo[] =
 {
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, Alpha) },               // ImGuiStyleVar_Alpha
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowPadding) },       // ImGuiStyleVar_WindowPadding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowRounding) },      // ImGuiStyleVar_WindowRounding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowBorderSize) },    // ImGuiStyleVar_WindowBorderSize
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowMinSize) },       // ImGuiStyleVar_WindowMinSize
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowTitleAlign) },    // ImGuiStyleVar_WindowTitleAlign
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ChildRounding) },       // ImGuiStyleVar_ChildRounding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ChildBorderSize) },     // ImGuiStyleVar_ChildBorderSize
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, PopupRounding) },       // ImGuiStyleVar_PopupRounding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, PopupBorderSize) },     // ImGuiStyleVar_PopupBorderSize
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, FramePadding) },        // ImGuiStyleVar_FramePadding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, FrameRounding) },       // ImGuiStyleVar_FrameRounding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, FrameBorderSize) },     // ImGuiStyleVar_FrameBorderSize
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemSpacing) },         // ImGuiStyleVar_ItemSpacing
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemInnerSpacing) },    // ImGuiStyleVar_ItemInnerSpacing
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, IndentSpacing) },       // ImGuiStyleVar_IndentSpacing
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, CellPadding) },         // ImGuiStyleVar_CellPadding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ScrollbarSize) },       // ImGuiStyleVar_ScrollbarSize
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ScrollbarRounding) },   // ImGuiStyleVar_ScrollbarRounding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, GrabMinSize) },         // ImGuiStyleVar_GrabMinSize
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, GrabRounding) },        // ImGuiStyleVar_GrabRounding
-    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, TabRounding) },         // ImGuiStyleVar_TabRounding
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, ButtonTextAlign) },     // ImGuiStyleVar_ButtonTextAlign
-    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, SelectableTextAlign) }, // ImGuiStyleVar_SelectableTextAlign
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, Alpha),               false }, // ImGuiStyleVar_Alpha
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowPadding),       true  }, // ImGuiStyleVar_WindowPadding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowRounding),      true  }, // ImGuiStyleVar_WindowRounding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowBorderSize),    true  }, // ImGuiStyleVar_WindowBorderSize
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowMinSize),       true  }, // ImGuiStyleVar_WindowMinSize
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowTitleAlign),    false }, // ImGuiStyleVar_WindowTitleAlign
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ChildRounding),       true  }, // ImGuiStyleVar_ChildRounding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ChildBorderSize),     true  }, // ImGuiStyleVar_ChildBorderSize
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, PopupRounding),       true  }, // ImGuiStyleVar_PopupRounding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, PopupBorderSize),     true  }, // ImGuiStyleVar_PopupBorderSize
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, FramePadding),        true  }, // ImGuiStyleVar_FramePadding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, FrameRounding),       true  }, // ImGuiStyleVar_FrameRounding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, FrameBorderSize),     true  }, // ImGuiStyleVar_FrameBorderSize
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemSpacing),         true  }, // ImGuiStyleVar_ItemSpacing
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemInnerSpacing),    true  }, // ImGuiStyleVar_ItemInnerSpacing
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, IndentSpacing),       true  }, // ImGuiStyleVar_IndentSpacing
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, CellPadding),         true  }, // ImGuiStyleVar_CellPadding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ScrollbarSize),       true  }, // ImGuiStyleVar_ScrollbarSize
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, ScrollbarRounding),   true  }, // ImGuiStyleVar_ScrollbarRounding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, GrabMinSize),         true  }, // ImGuiStyleVar_GrabMinSize
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, GrabRounding),        true  }, // ImGuiStyleVar_GrabRounding
+    { ImGuiDataType_Float, 1, (ImU32)IM_OFFSETOF(ImGuiStyle, TabRounding),         true  }, // ImGuiStyleVar_TabRounding
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, ButtonTextAlign),     false }, // ImGuiStyleVar_ButtonTextAlign
+    { ImGuiDataType_Float, 2, (ImU32)IM_OFFSETOF(ImGuiStyle, SelectableTextAlign), false }, // ImGuiStyleVar_SelectableTextAlign
 };
 
 static const ImGuiStyleVarInfo* GetStyleVarInfo(ImGuiStyleVar idx)
@@ -2576,8 +2593,10 @@ void ImGui::PushStyleVar(ImGuiStyleVar idx, float val)
     {
         ImGuiContext& g = *GImGui;
         float* pvar = (float*)var_info->GetVarPtr(&g.Style);
-        g.StyleVarStack.push_back(ImGuiStyleMod(idx, *pvar));
-        *pvar = val;
+        float* bvar = (float*)var_info->GetVarPtr(&g.StyleTemplate);
+        g.StyleVarStack.push_back(ImGuiStyleMod(idx, *bvar));
+        *pvar = var_info->Scale ? ImFloor(val * g.CurrentDpiScale) : val;
+        *bvar = val;
         return;
     }
     IM_ASSERT(0 && "Called PushStyleVar() float variant but variable is not a float!");
@@ -2590,8 +2609,10 @@ void ImGui::PushStyleVar(ImGuiStyleVar idx, const ImVec2& val)
     {
         ImGuiContext& g = *GImGui;
         ImVec2* pvar = (ImVec2*)var_info->GetVarPtr(&g.Style);
-        g.StyleVarStack.push_back(ImGuiStyleMod(idx, *pvar));
-        *pvar = val;
+        ImVec2* bvar = (ImVec2*)var_info->GetVarPtr(&g.StyleTemplate);
+        g.StyleVarStack.push_back(ImGuiStyleMod(idx, *bvar));
+        *pvar = var_info->Scale ? ImFloor(val * g.CurrentDpiScale) : val;
+        *bvar = val;
         return;
     }
     IM_ASSERT(0 && "Called PushStyleVar() ImVec2 variant but variable is not a ImVec2!");
@@ -2605,9 +2626,20 @@ void ImGui::PopStyleVar(int count)
         // We avoid a generic memcpy(data, &backup.Backup.., GDataTypeSize[info->Type] * info->Count), the overhead in Debug is not worth it.
         ImGuiStyleMod& backup = g.StyleVarStack.back();
         const ImGuiStyleVarInfo* info = GetStyleVarInfo(backup.VarIdx);
-        void* data = info->GetVarPtr(&g.Style);
-        if (info->Type == ImGuiDataType_Float && info->Count == 1)      { ((float*)data)[0] = backup.BackupFloat[0]; }
-        else if (info->Type == ImGuiDataType_Float && info->Count == 2) { ((float*)data)[0] = backup.BackupFloat[0]; ((float*)data)[1] = backup.BackupFloat[1]; }
+        void* pdata = info->GetVarPtr(&g.Style);
+        void* bdata = info->GetVarPtr(&g.StyleTemplate);
+        if (info->Type == ImGuiDataType_Float && info->Count == 1)
+        {
+            ((float*)pdata)[0] = info->Scale ? ImFloor(backup.BackupFloat[0] * g.CurrentDpiScale) : backup.BackupFloat[0];
+            ((float*)bdata)[0] = backup.BackupFloat[0];
+        }
+        else if (info->Type == ImGuiDataType_Float && info->Count == 2)
+        {
+            ((float*)pdata)[0] = info->Scale ? ImFloor(backup.BackupFloat[0] * g.CurrentDpiScale) : backup.BackupFloat[0];
+            ((float*)pdata)[1] = info->Scale ? ImFloor(backup.BackupFloat[1] * g.CurrentDpiScale) : backup.BackupFloat[1];
+            ((float*)bdata)[0] = backup.BackupFloat[0];
+            ((float*)bdata)[1] = backup.BackupFloat[1];
+        }
         g.StyleVarStack.pop_back();
         count--;
     }
@@ -2949,7 +2981,7 @@ ImGuiWindow::ImGuiWindow(ImGuiContext* context, const char* name) : DrawListInst
     LastFrameActive = -1;
     LastFrameJustFocused = -1;
     LastTimeActive = -1.0f;
-    FontWindowScale = FontDpiScale = 1.0f;
+    FontWindowScale = 1.0f;
     SettingsOffset = -1;
     DockOrder = -1;
     DrawList = &DrawListInst;
@@ -3049,6 +3081,7 @@ static void SetCurrentWindow(ImGuiWindow* window)
     ImGuiContext& g = *GImGui;
     g.CurrentWindow = window;
     g.CurrentTable = window && window->DC.CurrentTableIdx != -1 ? g.Tables.GetByIndex(window->DC.CurrentTableIdx) : NULL;
+    ImGui::SetCurrentFont(g.Font); // Reselect font with appropriate DPI in case window moved to another screen.
     if (window)
         g.FontSize = g.DrawListSharedData.FontSize = window->CalcFontSize();
 }
@@ -3529,8 +3562,11 @@ static ImDrawList* GetViewportDrawList(ImGuiViewportP* viewport, size_t drawlist
     // Our ImDrawList system requires that there is always a command
     if (viewport->DrawListsLastFrame[drawlist_no] != g.FrameCount)
     {
+        ImFont* font = g.Font;
+        if ((g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts))
+            font = ImGui::MapFontToDPI(font, viewport->DpiScale);
         draw_list->_ResetForNewFrame();
-        draw_list->PushTextureID(g.IO.Fonts->TexID);
+        draw_list->PushTextureID(font->ContainerAtlas->TexID);
         draw_list->PushClipRect(viewport->Pos, viewport->Pos + viewport->Size, false);
         viewport->DrawListsLastFrame[drawlist_no] = g.FrameCount;
     }
@@ -4046,6 +4082,7 @@ void ImGui::NewFrame()
     g.TooltipOverrideCount = 0;
     g.WindowsActiveCount = 0;
     g.MenusIdSubmittedThisFrame.resize(0);
+    g.Style = g.StyleTemplate;
 
     // Calculate frame-rate for the user, as a purely luxurious feature
     g.FramerateSecPerFrameAccum += g.IO.DeltaTime - g.FramerateSecPerFrame[g.FramerateSecPerFrameIdx];
@@ -5227,6 +5264,7 @@ ImVec2 ImGui::GetItemRectSize()
 bool ImGui::BeginChildEx(const char* name, ImGuiID id, const ImVec2& size_arg, bool border, ImGuiWindowFlags flags)
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* parent_window = g.CurrentWindow;
 
     flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_NoDocking;
@@ -5237,9 +5275,9 @@ bool ImGui::BeginChildEx(const char* name, ImGuiID id, const ImVec2& size_arg, b
     ImVec2 size = ImFloor(size_arg);
     const int auto_fit_axises = ((size.x == 0.0f) ? (1 << ImGuiAxis_X) : 0x00) | ((size.y == 0.0f) ? (1 << ImGuiAxis_Y) : 0x00);
     if (size.x <= 0.0f)
-        size.x = ImMax(content_avail.x + size.x, 4.0f); // Arbitrary minimum child size (0.0f causing too much issues)
+        size.x = ImMax(content_avail.x + size.x, IM_FLOOR(4.0f * style.PointSize)); // Arbitrary minimum child size (0.0f causing too much issues)
     if (size.y <= 0.0f)
-        size.y = ImMax(content_avail.y + size.y, 4.0f);
+        size.y = ImMax(content_avail.y + size.y, IM_FLOOR(4.0f * style.PointSize));
     SetNextWindowSize(size);
 
     // Build up name. If you need to append to a same child from multiple location in the ID stack, use BeginChild(ImGuiID id) with a stable value.
@@ -5289,6 +5327,7 @@ bool ImGui::BeginChild(ImGuiID id, const ImVec2& size_arg, bool border, ImGuiWin
 void ImGui::EndChild()
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* window = g.CurrentWindow;
 
     IM_ASSERT(g.WithinEndChild == false);
@@ -5303,9 +5342,9 @@ void ImGui::EndChild()
     {
         ImVec2 sz = window->Size;
         if (window->AutoFitChildAxises & (1 << ImGuiAxis_X)) // Arbitrary minimum zero-ish child size of 4.0f causes less trouble than a 0.0f
-            sz.x = ImMax(4.0f, sz.x);
+            sz.x = ImMax(IM_FLOOR(4.0f * style.PointSize), sz.x);
         if (window->AutoFitChildAxises & (1 << ImGuiAxis_Y))
-            sz.y = ImMax(4.0f, sz.y);
+            sz.y = ImMax(IM_FLOOR(4.0f * style.PointSize), sz.y);
         End();
 
         ImGuiWindow* parent_window = g.CurrentWindow;
@@ -5318,7 +5357,10 @@ void ImGui::EndChild()
 
             // When browsing a window that has no activable items (scroll only) we keep a highlight on the child
             if (window->DC.NavLayersActiveMask == 0 && window == g.NavWindow)
-                RenderNavHighlight(ImRect(bb.Min - ImVec2(2, 2), bb.Max + ImVec2(2, 2)), g.NavId, ImGuiNavHighlightFlags_TypeThin);
+            {
+                ImVec2 padding = ImVec2(2, 2) * style.PointSize;
+                RenderNavHighlight(ImRect(bb.Min - padding, bb.Max + padding), g.NavId, ImGuiNavHighlightFlags_TypeThin);
+            }
         }
         else
         {
@@ -5336,7 +5378,7 @@ void ImGui::EndChild()
 bool ImGui::BeginChildFrame(ImGuiID id, const ImVec2& size, ImGuiWindowFlags extra_flags)
 {
     ImGuiContext& g = *GImGui;
-    const ImGuiStyle& style = g.Style;
+    const ImGuiStyle& style = g.StyleTemplate;
     PushStyleColor(ImGuiCol_ChildBg, style.Colors[ImGuiCol_FrameBg]);
     PushStyleVar(ImGuiStyleVar_ChildRounding, style.FrameRounding);
     PushStyleVar(ImGuiStyleVar_ChildBorderSize, style.FrameBorderSize);
@@ -5392,6 +5434,7 @@ static void ApplyWindowSettings(ImGuiWindow* window, ImGuiWindowSettings* settin
 static ImGuiWindow* CreateNewWindow(const char* name, ImGuiWindowFlags flags)
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     //IMGUI_DEBUG_LOG("CreateNewWindow '%s', flags = 0x%08X\n", name, flags);
 
     // Create window the first time
@@ -5401,7 +5444,7 @@ static ImGuiWindow* CreateNewWindow(const char* name, ImGuiWindowFlags flags)
 
     // Default/arbitrary window position. Use SetNextWindowPos() with the appropriate condition flag to change the initial position of a window.
     const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
-    window->Pos = main_viewport->Pos + ImVec2(60, 60);
+    window->Pos = main_viewport->Pos + ImVec2(60, 60) * style.PointSize;
     window->ViewportPos = main_viewport->Pos;
 
     // User can disable loading and saving of settings. Tooltip and child windows also don't store settings.
@@ -5526,7 +5569,7 @@ static ImVec2 CalcWindowAutoFitSize(ImGuiWindow* window, const ImVec2& size_cont
         const bool is_menu = (window->Flags & ImGuiWindowFlags_ChildMenu) != 0;
         ImVec2 size_min = style.WindowMinSize;
         if (is_popup || is_menu) // Popups and menus bypass style.WindowMinSize by default, but we give then a non-zero minimum size to facilitate understanding problematic cases (e.g. empty popups)
-            size_min = ImMin(size_min, ImVec2(4.0f, 4.0f));
+            size_min = ImMin(size_min, ImFloor(ImVec2(4.0f, 4.0f) * style.PointSize));
 
         // FIXME-VIEWPORT-WORKAREA: May want to use GetWorkSize() instead of Size depending on the type of windows?
         ImVec2 avail_size = window->Viewport->Size;
@@ -6284,7 +6327,6 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         UpdateSelectWindowViewport(window);
         SetCurrentViewport(window, window->Viewport);
-        window->FontDpiScale = (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) ? window->Viewport->DpiScale : 1.0f;
         SetCurrentWindow(window);
         flags = window->Flags;
 
@@ -6410,7 +6452,6 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
                 // FIXME-DPI
                 //IM_ASSERT(old_viewport->DpiScale == window->Viewport->DpiScale); // FIXME-DPI: Something went wrong
                 SetCurrentViewport(window, window->Viewport);
-                window->FontDpiScale = (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) ? window->Viewport->DpiScale : 1.0f;
                 SetCurrentWindow(window);
             }
 
@@ -7093,15 +7134,53 @@ void ImGui::SetCurrentFont(ImFont* font)
     ImGuiContext& g = *GImGui;
     IM_ASSERT(font && font->IsLoaded());    // Font Atlas not created. Did you call io.Fonts->GetTexDataAsRGBA32 / GetTexDataAsAlpha8 ?
     IM_ASSERT(font->Scale > 0.0f);
+
+    if ((g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) != 0 && font != &g.InputTextPasswordFont)
+    {
+        int font_index = font->ContainerAtlas->Fonts.index_from_ptr(font->ContainerAtlas->Fonts.find(font));
+        ImFont* font1x = g.IO.Fonts->Fonts[font_index];
+        g.FontBaseSize1x = ImMax(1.0f, g.IO.FontGlobalScale * font1x->FontSize * font1x->Scale);
+        g.FontSize1x = g.CurrentWindow ? g.CurrentWindow->CalcFontSize1x() : 0.0f;
+        font = MapFontToDPI(font, g.CurrentViewport ? g.CurrentViewport->DpiScale : 1.0f);
+    }
+
     g.Font = font;
     g.FontBaseSize = ImMax(1.0f, g.IO.FontGlobalScale * g.Font->FontSize * g.Font->Scale);
     g.FontSize = g.CurrentWindow ? g.CurrentWindow->CalcFontSize() : 0.0f;
+    if ((g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts) == 0)
+    {
+        g.FontBaseSize1x = g.FontBaseSize;
+        g.FontSize1x = g.FontSize;
+    }
 
     ImFontAtlas* atlas = g.Font->ContainerAtlas;
     g.DrawListSharedData.TexUvWhitePixel = atlas->TexUvWhitePixel;
     g.DrawListSharedData.TexUvLines = atlas->TexUvLines;
     g.DrawListSharedData.Font = g.Font;
     g.DrawListSharedData.FontSize = g.FontSize;
+}
+
+ImFont* ImGui::MapFontToDPI(ImFont* font, float dpi)
+{
+    ImGuiContext& g = *GImGui;
+    IM_ASSERT(dpi >= 1.0f);
+    IM_ASSERT(!g.IO.AllFonts.empty());
+
+    if (font->ContainerAtlas->Scale == dpi)
+        return font;
+
+    // SetCurrentFont() may get a font from g.IO.ScaledFonts therefore we use font->ContainerAtlas instead of io.Fonts.
+    int font_index = font->ContainerAtlas->Fonts.index_from_ptr(font->ContainerAtlas->Fonts.find(font));
+    for (int i = 0; i < g.IO.AllFonts.Size; i++)
+    {
+        ImFontAtlas* fonts = g.IO.AllFonts[i];
+        if (fonts->Scale == dpi)
+        {
+            IM_ASSERT(font_index < fonts->Fonts.Size);
+            return fonts->Fonts[font_index];
+        }
+    }
+    return font;
 }
 
 void ImGui::PushFont(ImFont* font)
@@ -7111,7 +7190,7 @@ void ImGui::PushFont(ImFont* font)
         font = GetDefaultFont();
     SetCurrentFont(font);
     g.FontStack.push_back(font);
-    g.CurrentWindow->DrawList->PushTextureID(font->ContainerAtlas->TexID);
+    g.CurrentWindow->DrawList->PushTextureID(g.Font->ContainerAtlas->TexID); // SetCurrentFont() may set g.Font to a font from different atlas if _DpiEnableScaleFonts flag is set.
 }
 
 void  ImGui::PopFont()
@@ -7563,6 +7642,11 @@ float ImGui::GetFontSize()
     return GImGui->FontSize;
 }
 
+float ImGui::GetFontSize1x()
+{
+    return GImGui->FontSize1x;
+}
+
 ImVec2 ImGui::GetFontTexUvWhitePixel()
 {
     return GImGui->DrawListSharedData.TexUvWhitePixel;
@@ -7825,7 +7909,7 @@ static void ImGui::ErrorCheckNewFrameSanityChecks()
             IM_UNUSED(mon);
             IM_ASSERT(mon.MainSize.x > 0.0f && mon.MainSize.y > 0.0f && "Monitor main bounds not setup properly.");
             IM_ASSERT(ImRect(mon.MainPos, mon.MainPos + mon.MainSize).Contains(ImRect(mon.WorkPos, mon.WorkPos + mon.WorkSize)) && "Monitor work bounds not setup properly. If you don't have work area information, just copy MainPos/MainSize into them.");
-            IM_ASSERT(mon.DpiScale != 0.0f);
+            IM_ASSERT(mon.DpiScale >= 1.0f);
         }
     }
 }
@@ -8283,6 +8367,8 @@ float ImGui::CalcItemWidth()
 // The 4.0f here may be changed to match CalcItemWidth() and/or BeginChild() (right now we have a mismatch which is harmless but undesirable)
 ImVec2 ImGui::CalcItemSize(ImVec2 size, float default_w, float default_h)
 {
+    ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* window = GImGui->CurrentWindow;
 
     ImVec2 region_max;
@@ -8292,12 +8378,12 @@ ImVec2 ImGui::CalcItemSize(ImVec2 size, float default_w, float default_h)
     if (size.x == 0.0f)
         size.x = default_w;
     else if (size.x < 0.0f)
-        size.x = ImMax(4.0f, region_max.x - window->DC.CursorPos.x + size.x);
+        size.x = ImMax(IM_FLOOR(4.0f * style.PointSize), region_max.x - window->DC.CursorPos.x + size.x);
 
     if (size.y == 0.0f)
         size.y = default_h;
     else if (size.y < 0.0f)
-        size.y = ImMax(4.0f, region_max.y - window->DC.CursorPos.y + size.y);
+        size.y = ImMax(IM_FLOOR(4.0f * style.PointSize), region_max.y - window->DC.CursorPos.y + size.y);
 
     return size;
 }
@@ -10412,7 +10498,7 @@ void ImGui::NavUpdateWindowingOverlay()
     const ImGuiViewport* viewport = /*g.NavWindow ? g.NavWindow->Viewport :*/ GetMainViewport();
     SetNextWindowSizeConstraints(ImVec2(viewport->Size.x * 0.20f, viewport->Size.y * 0.20f), ImVec2(FLT_MAX, FLT_MAX));
     SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    PushStyleVar(ImGuiStyleVar_WindowPadding, g.Style.WindowPadding * 2.0f);
+    PushStyleVar(ImGuiStyleVar_WindowPadding, g.StyleTemplate.WindowPadding * 2.0f);
     Begin("###NavWindowingList", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
     for (int n = g.WindowsFocusOrder.Size - 1; n >= 0; n--)
     {
@@ -10691,6 +10777,7 @@ bool ImGui::IsDragDropPayloadBeingAccepted()
 const ImGuiPayload* ImGui::AcceptDragDropPayload(const char* type, ImGuiDragDropFlags flags)
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* window = g.CurrentWindow;
     ImGuiPayload& payload = g.DragDropPayload;
     IM_ASSERT(g.DragDropActive);                        // Not called between BeginDragDropTarget() and EndDragDropTarget() ?
@@ -10716,7 +10803,7 @@ const ImGuiPayload* ImGui::AcceptDragDropPayload(const char* type, ImGuiDragDrop
     if (!(flags & ImGuiDragDropFlags_AcceptNoDrawDefaultRect) && payload.Preview)
     {
         // FIXME-DRAGDROP: Settle on a proper default visuals for drop target.
-        r.Expand(3.5f);
+        r.Expand(3.5f * style.PointSize);
         bool push_clip_rect = !window->ClipRect.Contains(r);
         if (push_clip_rect) window->DrawList->PushClipRect(r.Min - ImVec2(1, 1), r.Max + ImVec2(1, 1));
         window->DrawList->AddRect(r.Min, r.Max, GetColorU32(ImGuiCol_DragDropTarget), 0.0f, 0, 2.0f);
@@ -11383,14 +11470,15 @@ ImGuiViewport* ImGui::FindViewportByPlatformHandle(void* platform_handle)
 
 void ImGui::SetCurrentViewport(ImGuiWindow* current_window, ImGuiViewportP* viewport)
 {
+    IM_ASSERT((current_window == NULL && viewport == NULL) || (current_window != NULL && viewport != NULL));
     ImGuiContext& g = *GImGui;
-    (void)current_window;
 
     if (viewport)
         viewport->LastFrameActive = g.FrameCount;
     if (g.CurrentViewport == viewport)
         return;
-    g.CurrentDpiScale = viewport ? viewport->DpiScale : 1.0f;
+
+    g.CurrentDpiScale = viewport != NULL ? viewport->DpiScale : 1.0f;
     g.CurrentViewport = viewport;
     //IMGUI_DEBUG_LOG_VIEWPORT("SetCurrentViewport changed '%s' 0x%08X\n", current_window ? current_window->Name : NULL, viewport ? viewport->ID : 0);
 
@@ -11398,6 +11486,18 @@ void ImGui::SetCurrentViewport(ImGuiWindow* current_window, ImGuiViewportP* view
     // FIXME-DPI: This is only currently used for experimenting with handling of multiple DPI
     if (g.CurrentViewport && g.PlatformIO.Platform_OnChangedViewport)
         g.PlatformIO.Platform_OnChangedViewport(g.CurrentViewport);
+
+    unsigned int flags = current_window ? current_window->Flags : 0;
+    if (!(flags & ImGuiWindowFlags_ChildWindow) && (g.IO.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts))
+    {
+        if (g.Style.PointSize != g.CurrentDpiScale)
+        {
+            // Restore 1x style, rescale to new DPI and reapply style modifiers as they are not present in style backup.
+            memcpy(&g.Style, &g.StyleTemplate, IM_OFFSETOF(ImGuiStyle, Colors)); // Copy everything up to colors.
+            if (g.CurrentDpiScale > 1.0f)
+                g.Style.ScaleAllSizes(g.CurrentDpiScale);
+        }
+    }
 }
 
 static void SetWindowViewport(ImGuiWindow* window, ImGuiViewportP* viewport)
@@ -14307,6 +14407,7 @@ static void ImGui::DockNodePreviewDockSetup(ImGuiWindow* host_window, ImGuiDockN
 static void ImGui::DockNodePreviewDockRender(ImGuiWindow* host_window, ImGuiDockNode* host_node, ImGuiWindow* root_payload, const ImGuiDockPreviewData* data)
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     IM_ASSERT(g.CurrentWindow == host_window);   // Because we rely on font size to calculate tab sizes
 
     // With this option, we only display the preview on the target viewport, and the payload viewport is made transparent.
@@ -14393,14 +14494,14 @@ static void ImGui::DockNodePreviewDockRender(ImGuiWindow* host_window, ImGuiDock
     }
 
     // Display drop boxes
-    const float overlay_rounding = ImMax(3.0f, g.Style.FrameRounding);
+    const float overlay_rounding = ImMax(IM_FLOOR(3.0f * style.PointSize), g.Style.FrameRounding);
     for (int dir = ImGuiDir_None; dir < ImGuiDir_COUNT; dir++)
     {
         if (!data->DropRectsDraw[dir + 1].IsInverted())
         {
             ImRect draw_r = data->DropRectsDraw[dir + 1];
             ImRect draw_r_in = draw_r;
-            draw_r_in.Expand(-2.0f);
+            draw_r_in.Expand(-IM_FLOOR(2.0f * style.PointSize));
             ImU32 overlay_col = (data->SplitDir == (ImGuiDir)dir && data->IsSplitDirExplicit) ? overlay_col_drop_hovered : overlay_col_drop;
             for (int overlay_n = 0; overlay_n < overlay_draw_lists_count; overlay_n++)
             {
@@ -14815,6 +14916,7 @@ ImGuiID ImGui::DockSpace(ImGuiID id, const ImVec2& size_arg, ImGuiDockNodeFlags 
 {
     ImGuiContext* ctx = GImGui;
     ImGuiContext& g = *ctx;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* window = GetCurrentWindow();
     if (!(g.IO.ConfigFlags & ImGuiConfigFlags_DockingEnable))
         return 0;
@@ -14859,9 +14961,9 @@ ImGuiID ImGui::DockSpace(ImGuiID id, const ImVec2& size_arg, ImGuiDockNodeFlags 
     const ImVec2 content_avail = GetContentRegionAvail();
     ImVec2 size = ImFloor(size_arg);
     if (size.x <= 0.0f)
-        size.x = ImMax(content_avail.x + size.x, 4.0f); // Arbitrary minimum child size (0.0f causing too much issues)
+        size.x = ImMax(content_avail.x + size.x, IM_FLOOR(4.0f * style.PointSize)); // Arbitrary minimum child size (0.0f causing too much issues)
     if (size.y <= 0.0f)
-        size.y = ImMax(content_avail.y + size.y, 4.0f);
+        size.y = ImMax(content_avail.y + size.y, IM_FLOOR(4.0f * style.PointSize));
     IM_ASSERT(size.x > 0.0f && size.y > 0.0f);
 
     node->Pos = window->DC.CursorPos;
@@ -16027,6 +16129,7 @@ static void SetClipboardTextFn_DefaultImpl(void*, const char* text)
 void ImGui::DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* viewport, const ImRect& bb)
 {
     ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
     ImGuiWindow* window = g.CurrentWindow;
 
     ImVec2 scale = bb.GetSize() / viewport->Size;
@@ -16044,7 +16147,7 @@ void ImGui::DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* 
         ImRect thumb_r = thumb_window->Rect();
         ImRect title_r = thumb_window->TitleBarRect();
         thumb_r = ImRect(ImFloor(off + thumb_r.Min * scale), ImFloor(off +  thumb_r.Max * scale));
-        title_r = ImRect(ImFloor(off + title_r.Min * scale), ImFloor(off +  ImVec2(title_r.Max.x, title_r.Min.y) * scale) + ImVec2(0,5)); // Exaggerate title bar height
+        title_r = ImRect(ImFloor(off + title_r.Min * scale), ImFloor(off +  ImVec2(title_r.Max.x, title_r.Min.y) * scale) + ImVec2(0.0f, IM_FLOOR(5.0f * style.PointSize))); // Exaggerate title bar height
         thumb_r.ClipWithFull(bb);
         title_r.ClipWithFull(bb);
         const bool window_is_focused = (g.NavWindow && thumb_window->RootWindowForTitleBarHighlight == g.NavWindow->RootWindowForTitleBarHighlight);
