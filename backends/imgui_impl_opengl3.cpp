@@ -148,7 +148,7 @@ using namespace gl;
 // OpenGL Data
 static GLuint       g_GlVersion = 0;                // Extracted at runtime using GL_MAJOR_VERSION, GL_MINOR_VERSION queries (e.g. 320 for GL 3.2)
 static char         g_GlslVersionString[32] = "";   // Specified by user or detected based on compile time GL settings.
-static GLuint       g_FontTexture = 0;
+static GLuint       g_FontTextures[32] = { };
 static GLuint       g_ShaderHandle = 0, g_VertHandle = 0, g_FragHandle = 0;
 static GLint        g_AttribLocationTex = 0, g_AttribLocationProjMtx = 0;                                // Uniforms location
 static GLuint       g_AttribLocationVtxPos = 0, g_AttribLocationVtxUV = 0, g_AttribLocationVtxColor = 0; // Vertex attributes location
@@ -465,19 +465,19 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
 }
 
-bool ImGui_ImplOpenGL3_CreateFontsTexture()
+ImTextureID ImGui_ImplOpenGL3_CreateFontsTexture(ImFontAtlas* fonts)
 {
     // Build texture atlas
-    ImGuiIO& io = ImGui::GetIO();
     unsigned char* pixels;
     int width, height;
-    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bit (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
+    GLuint font_texture = 0;
+    fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bit (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
 
     // Upload texture to graphics system
     GLint last_texture;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
-    glGenTextures(1, &g_FontTexture);
-    glBindTexture(GL_TEXTURE_2D, g_FontTexture);
+    glGenTextures(1, &font_texture);
+    glBindTexture(GL_TEXTURE_2D, font_texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 #ifdef GL_UNPACK_ROW_LENGTH
@@ -486,22 +486,48 @@ bool ImGui_ImplOpenGL3_CreateFontsTexture()
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
     // Store our identifier
-    io.Fonts->SetTexID((ImTextureID)(intptr_t)g_FontTexture);
+    fonts->SetTexID((ImTextureID)(intptr_t)font_texture);
 
     // Restore state
     glBindTexture(GL_TEXTURE_2D, last_texture);
 
+    return fonts->TexID;
+}
+
+bool ImGui_ImplOpenGL3_CreateFontsTexture()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts)
+    {
+        IM_ASSERT(!io.AllFonts.empty() && "All font atlases participating in DPI font scaling should be in io.AllFonts");
+        IM_ASSERT(io.AllFonts.Size < IM_ARRAYSIZE(g_FontTextures));
+        for (int i = 0; i < io.AllFonts.Size; i++)
+        {
+            g_FontTextures[i] = (GLuint)(intptr_t)ImGui_ImplOpenGL3_CreateFontsTexture(io.AllFonts[i]);
+            if (!g_FontTextures[i])
+                return false;
+        }
+    }
+    else
+    {
+        g_FontTextures[0] = (GLuint)(intptr_t)ImGui_ImplOpenGL3_CreateFontsTexture(io.Fonts);
+        if (!g_FontTextures[0])
+            return false;
+    }
     return true;
 }
 
 void ImGui_ImplOpenGL3_DestroyFontsTexture()
 {
-    if (g_FontTexture)
+    for (int i = 0; i < IM_ARRAYSIZE(g_FontTextures); i++)
     {
-        ImGuiIO& io = ImGui::GetIO();
-        glDeleteTextures(1, &g_FontTexture);
-        io.Fonts->SetTexID(0);
-        g_FontTexture = 0;
+        if (g_FontTextures[i])
+        {
+            ImGuiIO& io = ImGui::GetIO();
+            glDeleteTextures(1, &g_FontTextures[i]);
+            io.Fonts->SetTexID(0);
+            g_FontTextures[i] = 0;
+        }
     }
 }
 

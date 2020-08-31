@@ -430,6 +430,7 @@ static void ImGui_ImplSDL2_UpdateMonitors()
     ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
     platform_io.Monitors.resize(0);
     int display_count = SDL_GetNumVideoDisplays();
+    ImVector<float> dpi_set;
     for (int n = 0; n < display_count; n++)
     {
         // Warning: the validity of monitor DPI information on Windows depends on the application DPI awareness settings, which generally needs to be set in the manifest or at runtime.
@@ -446,9 +447,29 @@ static void ImGui_ImplSDL2_UpdateMonitors()
 #if SDL_HAS_PER_MONITOR_DPI
         float dpi = 0.0f;
         if (!SDL_GetDisplayDPI(n, &dpi, NULL, NULL))
-            monitor.DpiScale = dpi / 96.0f;
+            monitor.DpiScale = (dpi > 96.0f ? dpi : 96.0f) / 96.0f; // DPI below 1.0f is clamped to 1.0f
 #endif
         platform_io.Monitors.push_back(monitor);
+
+        // Store alternate DPI scales in a set. Scale 1.0f is ignored because io.Fonts provide it by default.
+        if (monitor.DpiScale > 1.0f)
+        {
+            dpi_set.find_erase(monitor.DpiScale);
+            dpi_set.push_back(monitor.DpiScale);
+        }
+    }
+
+    // Duplicate default font atlas for each unique DPI.
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.ConfigFlags & ImGuiConfigFlags_DpiEnableScaleFonts)
+    {
+        io.AllFonts.push_back(io.Fonts); // 1x font.
+        for (int i = 0; i < dpi_set.Size; i++)
+        {
+            ImFontAtlas* fonts = IM_NEW(ImFontAtlas);
+            io.Fonts->CloneInto(fonts, dpi_set[i]);
+            io.AllFonts.push_back(fonts);
+        }
     }
 }
 
