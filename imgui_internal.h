@@ -304,6 +304,7 @@ namespace ImStb
 // Helpers: Hashing
 IMGUI_API ImGuiID       ImHashData(const void* data, size_t data_size, ImU32 seed = 0);
 IMGUI_API ImGuiID       ImHashStr(const char* data, size_t data_size = 0, ImU32 seed = 0);
+IMGUI_API ImGuiID       ImHashDecoratedPath(const char* str, const char* str_end = NULL, ImU32 seed = 0);
 
 // Helpers: Sorting
 #ifndef ImQsort
@@ -2159,6 +2160,7 @@ public:
     ImGuiID     GetID(const void* ptr);
     ImGuiID     GetID(int n);
     ImGuiID     GetIDFromRectangle(const ImRect& r_abs);
+    ImGuiID     GetIDFromPath(const char* path);                // Supports leading '../' to go up in ID stack, '/' to start from top of current window ID stack and '//' to start from 0 seed. Multiple hashed values are separated with '/', to hash character '/' escape it with '\'.
 
     // We don't use g.FontSize because the window may be != g.CurrentWidow.
     ImRect      Rect() const            { return ImRect(Pos.x, Pos.y, Pos.x + Size.x, Pos.y + Size.y); }

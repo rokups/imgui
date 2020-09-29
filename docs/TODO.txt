@@ -32,7 +32,6 @@ It's mostly a bunch of personal notes, probably incomplete. Feel free to query i
  - window/child: allow SetNextWindowContentSize() to work on child windows.
  - window/clipping: some form of clipping when DisplaySize (or corresponding viewport) is zero.
  - window/tabbing: add a way to signify that a window or docked window requires attention (e.g. blinking title bar).
- - window/id_stack: add e.g. window->GetIDFromPath() with support for leading / and ../ (#1390, #331)
  ! scrolling: exposing horizontal scrolling with Shift+Wheel even when scrollbar is disabled expose lots of issues (#2424, #1463)
  - scrolling: while holding down a scrollbar, try to keep the same contents visible (at least while not moving mouse)
  - scrolling: allow immediately effective change of scroll after Begin() if we haven't appended items yet.

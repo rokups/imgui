@@ -1797,6 +1797,58 @@ ImGuiID ImHashStr(const char* data_p, size_t data_size, ImU32 seed)
     return ~crc;
 }
 
+// Hash "hello/world" as if it was "helloworld"
+// To hash a forward slash we need to use "hello\\/world"
+// Double-slash prefix // resets seed to 0.
+// Tripple-pound ### is honored and ignores part of the string before it.
+//   IM_ASSERT(ImHashDecoratedPath("Hello/world")   == ImHash("Helloworld", 0));
+//   IM_ASSERT(ImHashDecoratedPath("Hello\\/world") == ImHash("Hello/world", 0));
+//   IM_ASSERT(ImHashDecoratedPath("Hello###Konnichiwa/world###Sekai") == ImHash("###Konnichiwa###Sekai", 0));
+//   IM_ASSERT(ImHashDecoratedPath("/Hello") == ImHash("Hello", 0));
+//   IM_ASSERT(ImHashDecoratedPath("//Hello", NULL, 42) == ImHash("Hello", 0));
+ImGuiID ImHashDecoratedPath(const char* str, const char* str_end, ImGuiID seed)
+{
+    IM_ASSERT(str != NULL);
+    const ImU32* crc32_lut = GCrc32LookupTable;
+    if (str_end == NULL)
+        str_end = str + strlen(str);
+
+    // Leading // resets seed to 0.
+    if ((str_end - str) >= 2 && str[0] == '/' && str[1] == '/')
+    {
+        seed = 0;
+        str += 2;
+    }
+
+    // Rest of the string (###, \\/ and /).
+    seed = ~seed;
+    ImGuiID crc = seed;
+    while (str < str_end && *str)
+    {
+        const int chars_left = str_end - str;
+        if (*str == '/')                                    // Forward slashes are ignored.
+        {
+            seed = crc;                                     // Start with a correct seed next time ### is encountered.
+            str++;
+            continue;
+        }
+        else if (chars_left >= 2 && str[0] == '\\' && str[1] == '/')  // Skip \, / will be hashed.
+        {
+            str++;
+        }
+        else if (chars_left >= 3 && str[0] == '#' && str[1] == '#' && str[2] == '#') // Reset the hash when encountering ###.
+        {
+            crc = seed;
+        }
+        else if (chars_left >= 2 && str[0] == '.' && str[1] == '.' && (chars_left == 2 || str[2] == '/') && crc == seed) // crc == seed ensures assert does not trigger when two dots are part of the string.
+        {
+            IM_ASSERT(false && "../ is not supported in the middle of path.");
+        }
+        crc = (crc >> 8) ^ crc32_lut[(crc & 0xFF) ^ *(unsigned char*)str++];
+    }
+    return ~crc;
+}
+
 //-----------------------------------------------------------------------------
 // [SECTION] MISC HELPERS/UTILITIES (File functions)
 //-----------------------------------------------------------------------------
@@ -3338,6 +3390,34 @@ ImGuiID ImGuiWindow::GetIDFromRectangle(const ImRect& r_abs)
     ImRect r_rel = ImGui::WindowRectAbsToRel(this, r_abs);
     ImGuiID id = ImHashData(&r_rel, sizeof(r_rel), seed);
     return id;
+}
+
+ImGuiID ImGuiWindow::GetIDFromPath(const char* path)
+{
+    ImGuiID* start_seed = NULL;
+    const char* c = (const char*)path;
+
+    if (c[0] == '.' && (c[1] == '/' || c[1] == 0))      // Leading . or ./ for just getting current ID.
+    {
+        start_seed = &IDStack.back();
+        c += 1 + !!c[1];                                // Skip . or ./, but not \0.
+    }
+    else                                                // Leading / - start from window ID, leading // - start from 0, otherwise start from last ID.
+    {
+        start_seed = *c == '/' ? (*++c == '/' ? NULL : &IDStack.front()) : &IDStack.back();
+    }
+
+    // Leading ../
+    while (*c)
+    {
+        if (c[0] != '.' || c[1] != '.' || !(c[2] == '/' || c[2] == 0))
+            break;
+        --start_seed;
+        c += 2 + !!c[2];                                // Do not skip past \0
+    }
+    IM_ASSERT(start_seed == NULL || start_seed >= IDStack.begin()); // Too many ../ in path.
+
+    return ImHashDecoratedPath((const char*)c, NULL, start_seed ? *start_seed : 0U);
 }
 
 static void SetCurrentWindow(ImGuiWindow* window)
