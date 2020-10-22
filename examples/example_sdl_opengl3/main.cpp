@@ -37,128 +37,149 @@ using namespace gl;
 #endif
 #include "imgui_internal.h"
 
-typedef int ImGuiMsgBoxButtons;         // -> enum ImGuiMsgBoxButtons_
-
-enum ImGuiMsgBoxButtons_
-{
-    ImGuiMsgBoxButtons_None     = 0,
-    ImGuiMsgBoxButtons_Ok       = 1 << 1,
-    ImGuiMsgBoxButtons_Open     = 1 << 2,
-    ImGuiMsgBoxButtons_Save     = 1 << 3,
-    ImGuiMsgBoxButtons_Cancel   = 1 << 4,
-    ImGuiMsgBoxButtons_Close    = 1 << 5,
-    ImGuiMsgBoxButtons_Discard  = 1 << 6,
-    ImGuiMsgBoxButtons_Apply    = 1 << 7,
-    ImGuiMsgBoxButtons_Reset    = 1 << 8,
-    ImGuiMsgBoxButtons_Restore  = 1 << 9,
-    ImGuiMsgBoxButtons_Help     = 1 << 10,
-    ImGuiMsgBoxButtons_SaveAll  = 1 << 11,
-    ImGuiMsgBoxButtons_Yes      = 1 << 12,
-    ImGuiMsgBoxButtons_YesToAll = 1 << 13,
-    ImGuiMsgBoxButtons_No       = 1 << 14,
-    ImGuiMsgBoxButtons_NoToAll  = 1 << 15,
-    ImGuiMsgBoxButtons_Abort    = 1 << 16,
-    ImGuiMsgBoxButtons_Retry    = 1 << 17,
-    ImGuiMsgBoxButtons_Ignore   = 1 << 18,
-};
-
 namespace ImGui
 {
 
-IMGUI_API ImGuiMsgBoxButtons MsgBoxButtons(ImGuiMsgBoxButtons buttons, ImGuiMsgBoxButtons default_button = 0);                                      // Render standard buttons aligned to the right side. Returns pressed button or 0. Set nav focus to default_button if specified.
-IMGUI_API ImGuiMsgBoxButtons MsgBox(const char* name, const char* message, ImGuiMsgBoxButtons buttons, ImGuiMsgBoxButtons default_button = 0); // Render a popup with a text message and one or more standard buttons.
+// buttons - array of button names, last array item must be NULL.
+// Function returns true when button is pressed, index of pressed button is stored in pressed_button variable.
+// default_button is focused for navigation by default.
+// h_align allows chosing side of buttons, by default they are rendered on the right. Use 0.5f to center buttons.
+IMGUI_API bool MsgBoxButtons(const char* buttons[], int* pressed_button, int default_button = 0, float h_align = 1.0f);
+// buttons - a string of button names, separated with \0 character. String must end with two nulls.
+IMGUI_API bool MsgBoxButtons(const char* buttons, int* pressed_button, int default_button = 0, float h_align = 1.0f);
+IMGUI_API bool MsgBox(const char* name, const char* message, const char* buttons[], int* pressed_button, int default_button = 0, float h_align = 1.0f);
+IMGUI_API bool MsgBox(const char* name, const char* message, const char* buttons, int* pressed_button, int default_button = 0, float h_align = 1.0f);
+// message_format - a sprintf() - compatible format.
+IMGUI_API bool MsgBoxF(const char* name, const char* buttons[], int* pressed_button, int default_button /*= 0*/, float h_align /*= 1.0f*/, const char* message_format, ...);
+IMGUI_API bool MsgBoxF(const char* name, const char* buttons, int* pressed_button, int default_button /*= 0*/, float h_align /*= 1.0f*/, const char* message_format, ...);
+IMGUI_API bool MsgBoxV(const char* name, const char* buttons[], int* pressed_button, int default_button /*= 0*/, float h_align /*= 1.0f*/, const char* message_format, va_list ap);
+IMGUI_API bool MsgBoxV(const char* name, const char* buttons, int* pressed_button, int default_button /*= 0*/, float h_align /*= 1.0f*/, const char* message_format, va_list ap);
 
 }
 
-// Order of this array describes button order in the widget.
-static struct ImGuiMsgBoxButtonInfo
-{
-    ImGuiButtonFlags Button;
-    const char* Name;
-} StandardButtonInfo[] = {
-    // Positive
-    { ImGuiMsgBoxButtons_Ok,       "Ok"         },
-    { ImGuiMsgBoxButtons_Open,     "Open"       },
-    { ImGuiMsgBoxButtons_Save,     "Save"       },
-    { ImGuiMsgBoxButtons_SaveAll,  "Save All"   },
-    { ImGuiMsgBoxButtons_Yes,      "Yes"        },
-    { ImGuiMsgBoxButtons_YesToAll, "Yes to All" },
-    { ImGuiMsgBoxButtons_Apply,    "Apply"      },
-    { ImGuiMsgBoxButtons_Retry,    "Retry"      },
-    // Negative
-    { ImGuiMsgBoxButtons_No,       "No"         },
-    { ImGuiMsgBoxButtons_NoToAll,  "No to All"  },
-    { ImGuiMsgBoxButtons_Discard,  "Discard"    },
-    { ImGuiMsgBoxButtons_Restore,  "Restore"    },
-    { ImGuiMsgBoxButtons_Reset,    "Reset"      },
-    { ImGuiMsgBoxButtons_Abort,    "Abort"      },
-    { ImGuiMsgBoxButtons_Close,    "Close"      },
-    // Ignore
-    { ImGuiMsgBoxButtons_Ignore,   "Ignore"     },
-    { ImGuiMsgBoxButtons_Cancel,   "Cancel"     },
-    // Misc
-    { ImGuiMsgBoxButtons_Help,     "Help"       },
-};
-
-ImGuiMsgBoxButtons ImGui::MsgBoxButtons(ImGuiMsgBoxButtons buttons, ImGuiMsgBoxButtons default_button)
+bool ImGui::MsgBoxButtons(const char* buttons[], int* pressed_button, int default_button, float h_align)
 {
     IM_ASSERT(buttons != 0);
+    IM_ASSERT(pressed_button != 0);
+    IM_ASSERT(h_align >= 0.0f && h_align <= 1.0f);
 
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
-    ImGuiMsgBoxButtons pressed_button = 0;
+    bool pressed = false;
 
     // Measure space needed for buttons.
     ImVec2 size_needed;
     size_needed.y = g.FontSize + g.Style.FramePadding.y * 2.0f;
-    for (int i = 0; i < IM_ARRAYSIZE(StandardButtonInfo); i++)
-    {
-        ImGuiMsgBoxButtonInfo* info = &StandardButtonInfo[i];
-        if (buttons & info->Button)
-            size_needed.x += CalcTextSize(info->Name).x + g.Style.FramePadding.x * 2.0f + g.Style.ItemSpacing.x;
-    }
+    for (int i = 0; buttons[i]; i++)
+        size_needed.x += CalcTextSize(buttons[i]).x + g.Style.FramePadding.x * 2.0f + g.Style.ItemSpacing.x;
     size_needed.x -= g.Style.ItemSpacing.x;
 
     // Align buttons to the bottom-right if there is enough space.
     const ImVec2 size_avail = GetContentRegionAvail();
     if (size_avail.x > size_needed.x)
-        window->DC.CursorPos.x += size_avail.x - size_needed.x;
+        window->DC.CursorPos.x += (size_avail.x - size_needed.x) * h_align;
     if (size_avail.y > size_needed.y)
         window->DC.CursorPos.y += size_avail.y - size_needed.y;
 
     // Draw buttons.
-    for (int i = 0; i < IM_ARRAYSIZE(StandardButtonInfo); i++)
+    for (int i = 0; buttons[i]; i++)
     {
-        ImGuiMsgBoxButtonInfo* info = &StandardButtonInfo[i];
-        if (buttons & info->Button)
+        if (Button(buttons[i]))
         {
-            if (Button(info->Name))
-            {
-                pressed_button = info->Button;
-                ImGui::CloseCurrentPopup();
-            }
-            if (!window->WasActive && info->Button == default_button)
-                SetItemDefaultFocus();
-            SameLine();
+            pressed = true;
+            *pressed_button = i;
+            ImGui::CloseCurrentPopup();
         }
+        if (i == default_button)
+            SetItemDefaultFocus();  // FIXME: We should implement a nav feature to provide handlers for ESC/Enter.
+        SameLine();
     }
     NewLine();
 
-    return pressed_button;
+    return pressed;
 }
 
-ImGuiMsgBoxButtons ImGui::MsgBox(const char* name, const char* message, ImGuiMsgBoxButtons buttons, ImGuiMsgBoxButtons default_button)
+template<size_t Size>
+static void StringToArray(const char* str, const char* (&array)[Size])
+{
+    int index = 0;
+    for (const char* button = str; *button; button += strlen(button) + 1)
+        array[index++] = button;
+    IM_ASSERT(index < IM_ARRAYSIZE(array));
+    array[index] = 0;
+}
+
+bool ImGui::MsgBoxButtons(const char* buttons, int* pressed_button, int default_button, float h_align)
+{
+    const char* buttons_array[16];
+    StringToArray(buttons, buttons_array);
+    return MsgBoxButtons(buttons_array, pressed_button, default_button, h_align);
+}
+
+bool ImGui::MsgBox(const char* name, const char* message, const char* buttons[], int* pressed_button, int default_button, float h_align)
 {
     IM_ASSERT(name != NULL);
     IM_ASSERT(message != NULL);
-    ImGuiMsgBoxButtons pressed_button = 0;
+    bool pressed = false;
     if (BeginPopupModal(name))
     {
         TextUnformatted(message);
-        pressed_button = MsgBoxButtons(buttons, default_button);
+        pressed = MsgBoxButtons(buttons, pressed_button, default_button, h_align);
+        if (IsKeyPressedMap(ImGuiKey_Escape))
+            CloseCurrentPopup();
         EndPopup();
     }
-    return pressed_button;
+    return pressed;
+}
+
+bool ImGui::MsgBox(const char* name, const char* message, const char* buttons, int* pressed_button, int default_button, float h_align)
+{
+    const char* buttons_array[16];
+    StringToArray(buttons, buttons_array);
+    return MsgBox(name, message, buttons_array, pressed_button, default_button, h_align);
+}
+
+bool ImGui::MsgBoxV(const char* name, const char* buttons[], int* pressed_button, int default_button, float h_align, const char* message_format, va_list ap)
+{
+    IM_ASSERT(name != NULL);
+    IM_ASSERT(message_format != NULL);
+    bool pressed = false;
+    if (BeginPopupModal(name))
+    {
+        TextV(message_format, ap);
+        pressed = MsgBoxButtons(buttons, pressed_button, default_button, h_align);
+        if (IsKeyPressedMap(ImGuiKey_Escape))
+            CloseCurrentPopup();
+        EndPopup();
+    }
+    return pressed;
+}
+
+bool ImGui::MsgBoxV(const char* name, const char* buttons, int* pressed_button, int default_button, float h_align, const char* message_format, va_list ap)
+{
+    const char* buttons_array[16];
+    StringToArray(buttons, buttons_array);
+    return MsgBoxV(name, buttons_array, pressed_button, default_button, h_align, message_format, ap);
+}
+
+bool ImGui::MsgBoxF(const char* name, const char* buttons[], int* pressed_button, int default_button, float h_align, const char* message_format, ...)
+{
+    va_list args;
+    va_start(args, message_format);
+    bool pressed = MsgBoxV(name, buttons, pressed_button, default_button, h_align, message_format, args);
+    va_end(args);
+    return pressed;
+}
+
+bool ImGui::MsgBoxF(const char* name, const char* buttons, int* pressed_button, int default_button, float h_align, const char* message_format, ...)
+{
+    const char* buttons_array[16];
+    StringToArray(buttons, buttons_array);
+    va_list args;
+    va_start(args, message_format);
+    bool pressed = MsgBoxV(name, buttons_array, pressed_button, default_button, h_align, message_format, args);
+    va_end(args);
+    return pressed;
 }
 
 // Main code
@@ -312,13 +333,11 @@ int main(int, char**)
             if (ImGui::Button("Open Simple Popup"))
                 ImGui::OpenPopup("Standard Popup");
 
-            ImGuiMsgBoxButtons pressed = ImGui::MsgBox("Standard Popup", "A simple message box with buttons.", ImGuiMsgBoxButtons_Yes | ImGuiMsgBoxButtons_No | ImGuiMsgBoxButtons_Cancel);
-            if (pressed == ImGuiMsgBoxButtons_Yes)
-                printf("Simple Yes\n");
-            else if (pressed == ImGuiMsgBoxButtons_No)
-                printf("Simple No\n");
-            else if (pressed == ImGuiMsgBoxButtons_Cancel)
-                printf("Simple Cancel\n");
+            int pressed_button = 0;
+            static const char* button_names[] = {"Yes", "No", "Cancel", NULL};
+
+            if (ImGui::MsgBox("Standard Popup", "A simple message box with buttons.", button_names, &pressed_button, 0, 0.5f))
+                printf("Simple %s\n", button_names[pressed_button]);
 
             // Demonstrate a custom message box which contains standard buttons.
             if (ImGui::Button("Open Custom Popup"))
@@ -327,15 +346,18 @@ int main(int, char**)
             if (ImGui::BeginPopupModal("Custom Message Box"))
             {
                 ImGui::TextUnformatted("Message box demo.");
-                pressed = ImGui::MsgBoxButtons(ImGuiMsgBoxButtons_Yes | ImGuiMsgBoxButtons_No | ImGuiMsgBoxButtons_Cancel);
-                if (pressed == ImGuiMsgBoxButtons_Yes)
-                    printf("Custom Yes\n");
-                else if (pressed == ImGuiMsgBoxButtons_No)
-                    printf("Custom No\n");
-                else if (pressed == ImGuiMsgBoxButtons_Cancel)
-                    printf("Custom Cancel\n");
+                if (ImGui::MsgBoxButtons("Yes\0No\0Cancel\0", &pressed_button))
+                    printf("Custom %s\n", button_names[pressed_button]);
+                if (ImGui::IsKeyPressedMap(ImGuiKey_Escape))
+                    ImGui::CloseCurrentPopup();
                 ImGui::EndPopup();
             }
+
+            ImGui::MsgBoxButtons("Yes\0No\0Cancel\0", &pressed_button, 0, 0.0f);
+            ImGui::MsgBoxButtons("Yes\0No\0Cancel\0", &pressed_button, 0, 0.3f);
+            ImGui::MsgBoxButtons("Yes\0No\0Cancel\0", &pressed_button, 0, 0.5f);
+            ImGui::MsgBoxButtons("Yes\0No\0Cancel\0", &pressed_button, 0, 0.8f);
+            ImGui::MsgBoxButtons("Yes\0No\0Cancel\0", &pressed_button, 0, 1.0f);
 
             ImGui::End();
         }
