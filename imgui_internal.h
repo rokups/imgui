@@ -2271,6 +2271,7 @@ namespace ImGui
     // Tables: Candidates for public api
     IMGUI_API void          TableOpenContextMenu(int column_n = -1);
     IMGUI_API void          TableSetColumnWidth(int column_n, float width);
+    IMGUI_API bool          TableGetColumnIsClipped(int column_n = -1);  // Return true when column is clipped by host scrolling region
     IMGUI_API bool          TableGetColumnIsEnabled(int column_n = -1);  // Return false when column is disabled (hidden) by user (e.g. via context menu, or _DefaultHide flag)
     IMGUI_API void          TableSetColumnIsEnabled(int column_n, bool enabled);
     IMGUI_API void          TableSetColumnSortDirection(int column_n, ImGuiSortDirection sort_direction, bool append_to_sort_specs);

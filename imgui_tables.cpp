@@ -2023,6 +2023,17 @@ const char*   ImGui::TableGetColumnName(int column_n)
     return TableGetColumnName(table, column_n);
 }
 
+bool    ImGui::TableGetColumnIsClipped(int column_n)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiTable* table = g.CurrentTable;
+    if (!table)
+        return false;
+    if (column_n < 0)
+        column_n = table->CurrentColumn;
+    return (table->EnabledUnclippedMaskByIndex & ((ImU64)1 << column_n)) == 0;
+}
+
 bool    ImGui::TableGetColumnIsEnabled(int column_n)
 {
     ImGuiContext& g = *GImGui;
