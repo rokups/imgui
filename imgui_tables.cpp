@@ -404,6 +404,8 @@ bool    ImGui::BeginTableEx(const char* name, ImGuiID id, int columns_count, ImG
     table->RightMostEnabledColumn = -1;
     table->ColumnsBgColorSetMask = 0x00;
 
+    table->RowsRenderData.resize(0);
+
     // Using opaque colors facilitate overlapping elements of the grid
     table->BorderColorStrong = GetColorU32(ImGuiCol_TableBorderStrong);
     table->BorderColorLight = GetColorU32(ImGuiCol_TableBorderLight);
@@ -1257,6 +1259,12 @@ void ImGui::TableDrawBorders(ImGuiTable* table)
     const float draw_y2_body = table->OuterRect.Max.y;
     const float draw_y2_head = table->IsUsingHeaders ? ((table->FreezeRowsCount >= 1 ? table->OuterRect.Min.y : table->WorkRect.Min.y) + table->LastFirstRowHeight) : draw_y1;
 
+    for (int row_n = 0; row_n < table->RowsRenderData.Size; row_n++)
+    {
+        const ImGuiTableRowData* row = &table->RowsRenderData[row_n];
+        inner_drawlist->AddLine(ImVec2(table->BorderX1, row->RowPosY1), ImVec2(table->BorderX2, row->RowPosY1), IM_COL32(255, 255, 0, 255), TABLE_BORDER_SIZE);
+    }
+
     if (table->Flags & ImGuiTableFlags_BordersInnerV)
     {
         for (int order_n = 0; order_n < table->ColumnsCount; order_n++)
@@ -1921,6 +1929,19 @@ void    ImGui::TableEndRow(ImGuiTable* table)
         // Draw bottom border at the row unfreezing mark (always strong)
         if (draw_strong_bottom_border && bg_y2 >= table->BgClipRect.Min.y && bg_y2 < table->BgClipRect.Max.y)
             window->DrawList->AddLine(ImVec2(table->BorderX1, bg_y2), ImVec2(table->BorderX2, bg_y2), table->BorderColorStrong, border_size);
+
+        // Store row log entry
+        if ((border_col | bg_col0 | bg_col1) != 0)
+        {
+            const int row_data_n = table->RowsRenderData.Size;
+            table->RowsRenderData.resize(row_data_n + 1);
+            ImGuiTableRowData* row_data = &table->RowsRenderData[row_data_n];
+            row_data->RowPosY1 = bg_y1;
+            row_data->RowPosY2 = bg_y2;
+            row_data->RowTopBorder = border_col;
+            row_data->RowBgColor[0] = bg_col0;
+            row_data->RowBgColor[1] = bg_col1;
+        }
     }
 
     // End frozen rows (when we are past the last frozen row line, teleport cursor and alter clipping rectangle)
@@ -3132,6 +3153,16 @@ void ImGui::DebugNodeTable(ImGuiTable* table)
     BulletText("CellPaddingX: %.1f, CellSpacingX: %.1f/%.1f, OuterPaddingX: %.1f", table->CellPaddingX, table->CellSpacingX1, table->CellSpacingX2, table->OuterPaddingX);
     BulletText("HoveredColumnBody: %d, HoveredColumnBorder: %d", table->HoveredColumnBody, table->HoveredColumnBorder);
     BulletText("ResizedColumn: %d, ReorderColumn: %d, HeldHeaderColumn: %d", table->ResizedColumn, table->ReorderColumn, table->HeldHeaderColumn);
+    if (ImGui::TreeNode("RowsRenderData", "RowsRenderData: %d/%d", table->RowsRenderData.Size, table->CurrentRow + 1))
+    {
+        for (int row_n = 0; row_n < table->RowsRenderData.Size; row_n++)
+        {
+            ImGuiTableRowData* row = &table->RowsRenderData[row_n];
+            ImGui::BulletText("Row %6.2f->%6.2f, RowBgColor=0x%08X, 0x%08X", row->RowPosY1, row->RowPosY2, row->RowBgColor[0], row->RowBgColor[1]);
+        }
+        ImGui::TreePop();
+    }
+
     //BulletText("BgDrawChannels: %d/%d", 0, table->BgDrawChannelUnfrozen);
     for (int n = 0; n < table->ColumnsCount; n++)
     {

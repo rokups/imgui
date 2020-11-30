@@ -1948,6 +1948,16 @@ struct ImGuiTableColumn
     }
 };
 
+// [Internal] sizeof() ~ 24
+// Only visible/unclipped row will store that transient data which can be used to render cell backgrounds in EndTable().
+struct ImGuiTableRowData
+{
+    float   RowPosY1;
+    float   RowPosY2;
+    ImU32   RowTopBorder;
+    ImU32   RowBgColor[2];
+};
+
 // Transient cell data stored per row.
 // sizeof() ~ 6
 struct ImGuiTableCellData
@@ -2020,6 +2030,7 @@ struct ImGuiTable
     ImGuiWindow*                InnerWindow;                // Window holding the table data (== OuterWindow or a child window)
     ImGuiTextBuffer             ColumnsNames;               // Contiguous buffer holding columns names
     ImDrawListSplitter          DrawSplitter;               // We carry our own ImDrawList splitter to allow recursion (FIXME: could be stored outside, worst case we need 1 splitter per recursing table)
+    ImVector<ImGuiTableRowData> RowsRenderData;
     ImVector<ImGuiTableSortSpecsColumn> SortSpecsData;      // FIXME-OPT: Fixed-size array / small-vector pattern, optimize for single sort spec
     ImGuiTableSortSpecs         SortSpecs;                  // Public facing sorts specs, this is what we return in TableGetSortSpecs()
     ImS8                        SortSpecsCount;
