@@ -108,7 +108,7 @@ static const ImU64          IM_U64_MAX = ULLONG_MAX; // (0xFFFFFFFFFFFFFFFFull);
 static const ImU64          IM_U64_MAX = (2ULL * 9223372036854775807LL + 1);
 #endif
 
-static const float          TOOLTIP_DELAY = 0.50f;   // Time before slow tooltips appears (FIXME: This is temporary until we merge in tooltip timer+priority work)
+static const float          TOOLTIP_DELAY = 0.50f;   // Time before slow tooltips appears (FIXME: This is temporary until we merge in tooltip timer+priority work. It also is declared in imgui_tables.cpp)
 
 //-------------------------------------------------------------------------
 // [SECTION] Forward Declarations

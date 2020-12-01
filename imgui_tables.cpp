@@ -22,6 +22,12 @@
 #endif
 #include "imgui_internal.h"
 
+#if defined(_MSC_VER) && _MSC_VER <= 1500 // MSVC 2008 or earlier
+#include <stddef.h>     // intptr_t
+#else
+#include <stdint.h>     // intptr_t
+#endif
+
 // Visual Studio warnings
 #ifdef _MSC_VER
 #pragma warning (disable: 4127)     // condition expression is constant
@@ -49,6 +55,13 @@
 #pragma GCC diagnostic ignored "-Wpragmas"                  // warning: unknown option after '#pragma GCC diagnostic' kind
 #pragma GCC diagnostic ignored "-Wclass-memaccess"          // [__GNUC__ >= 8] warning: 'memset/memcpy' clearing/writing an object of type 'xxxx' with no trivial copy-assignment; use assignment or value-initialization instead
 #endif
+
+
+//-------------------------------------------------------------------------
+// Data
+//-------------------------------------------------------------------------
+
+static const float          TOOLTIP_DELAY = 0.50f;          // Time before slow tooltips appears (FIXME: This is temporary until we merge in tooltip timer+priority work. It also is declared in imgui_widgets.cpp)
 
 
 //-----------------------------------------------------------------------------
@@ -802,7 +815,7 @@ void    ImGui::TableUpdateLayout(ImGuiTable* table)
         if (column->Flags & ImGuiTableColumnFlags_WidthStretch)
         {
             // StretchWeight gets converted into WidthRequest
-            if (!mixed_same_widths) 
+            if (!mixed_same_widths)
             {
                 float weight_ratio = column->StretchWeight / sum_weights_stretched;
                 column->WidthRequest = IM_FLOOR(ImMax(width_avail_for_stretched_columns * weight_ratio, min_column_width) + 0.01f);
