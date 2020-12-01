@@ -1917,7 +1917,8 @@ struct ImGuiTableColumn
     ImS16                   NameOffset;                     // Offset into parent ColumnsNames[]
     bool                    IsEnabled;                      // Is the column not marked Hidden by the user? (even if off view, e.g. clipped by scrolling).
     bool                    IsEnabledNextFrame;
-    bool                    IsClipped;                      // Is not actually in view (e.g. not overlapping the host window clipping rectangle).
+    bool                    IsClippedX;                     // Is not actually in view (e.g. not overlapping the host window clipping rectangle).
+    bool                    IsClippedY;
     bool                    IsSkipItems;                    // Do we want item submissions to this column to be ignored early on.
     ImS8                    NavLayerCurrent;                // ImGuiNavLayer in 1 byte
     ImS8                    DisplayOrder;                   // Index within Table's IndexToDisplayOrder[] (column may be reordered by users)
@@ -1962,9 +1963,10 @@ struct ImGuiTable
     ImSpan<ImGuiTableColumn>    Columns;                    // Point within RawData[]
     ImSpan<ImS8>                DisplayOrderToIndex;        // Point within RawData[]. Store display order of columns (when not reordered, the values are 0...Count-1)
     ImSpan<ImGuiTableCellData>  RowCellData;                // Point within RawData[]. Store cells background requests for current row.
-    ImU64                       EnabledMaskByIndex;         // Column Index -> IsEnabled map (== not hidden by user/api) in a format adequate for iterating column without touching cold data
     ImU64                       EnabledMaskByDisplayOrder;  // Column DisplayOrder -> IsEnabled map
-    ImU64                       EnabledUnclippedMaskByIndex;// Enabled and not Clipped, aka "actually visible" "not hidden by some scrolling"
+    ImU64                       EnabledMaskByIndex;         // Column Index -> IsEnabled map (== not hidden by user/api) in a format adequate for iterating column without touching cold data
+    ImU64                       ClippedMaskByIndex;         // Column Index -> (IsClippedX|IsClippedX) map (== hidden by user/api || hidden by scrolling/cliprect)
+    ImU64                       SkipItemsMaskByIndex;       // Column Index -> IsSkipItems map (== not hidden by user/api)
     ImGuiTableFlags             SettingsLoadedFlags;        // Which data were loaded from the .ini file (e.g. when order is not altered we won't save order)
     int                         SettingsOffset;             // Offset in g.SettingsTables
     int                         LastFrameActive;

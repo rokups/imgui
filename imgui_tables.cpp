@@ -580,6 +580,8 @@ void    ImGui::TableUpdateLayout(ImGuiTable* table)
     bool want_column_auto_fit = false;
     table->IsDefaultDisplayOrder = true;
     table->ColumnsEnabledCount = 0;
+    table->ClippedMaskByIndex = 0x00;
+    table->SkipItemsMaskByIndex = 0x00;
     for (int order_n = 0; order_n < table->ColumnsCount; order_n++)
     {
         const int column_n = table->DisplayOrderToIndex[order_n];
@@ -624,7 +626,6 @@ void    ImGui::TableUpdateLayout(ImGuiTable* table)
         }
         IM_ASSERT(column->IndexWithinEnabledSet <= column->DisplayOrder);
     }
-    table->EnabledUnclippedMaskByIndex = table->EnabledMaskByIndex; // Columns will be masked out below when Clipped
     table->RightMostEnabledColumn = (ImS8)(last_visible_column ? table->Columns.index_from_ptr(last_visible_column) : -1);
 
     // Disable child window clipping while fitting columns. This is not strictly necessary but makes it possible to avoid
@@ -682,7 +683,7 @@ void    ImGui::TableUpdateLayout(ImGuiTable* table)
         {
             // Process auto-fit for non-stretched columns
             // Latch initial size for fixed columns and update it constantly for auto-resizing column (unless clipped!)
-            if ((column->AutoFitQueue != 0x00) || ((column->Flags & ImGuiTableColumnFlags_WidthAutoResize) && !column->IsClipped))
+            if ((column->AutoFitQueue != 0x00) || ((column->Flags & ImGuiTableColumnFlags_WidthAutoResize) && !column->IsClippedX))
                 column->WidthRequest = width_auto;
 
             // FIXME-TABLE: Increase minimum size during init frame to avoid biasing auto-fitting widgets
@@ -832,7 +833,7 @@ void    ImGui::TableUpdateLayout(ImGuiTable* table)
             column->ClipRect.Min.y = work_rect.Min.y;
             column->ClipRect.Max.y = FLT_MAX;
             column->ClipRect.ClipWithFull(host_clip_rect);
-            column->IsClipped = column->IsSkipItems = true;
+            column->IsClippedX = column->IsClippedY = column->IsSkipItems = true;
             column->ItemWidth = 1.0f;
             continue;
         }
@@ -881,11 +882,28 @@ void    ImGui::TableUpdateLayout(ImGuiTable* table)
         column->ClipRect.Max.y = FLT_MAX;
         column->ClipRect.ClipWithFull(host_clip_rect);
 
-        column->IsClipped = (column->ClipRect.Max.x <= column->ClipRect.Min.x) && (column->AutoFitQueue & 1) == 0 && (column->CannotSkipItemsQueue & 1) == 0;
-        if (column->IsClipped)
-            table->EnabledUnclippedMaskByIndex &= ~((ImU64)1 << column_n); // Columns with the _WidthAutoResize sizing policy will never be updated then.
+        // Mark column as Clipped (not in sight)
+        // FIXME-TABLE: for tables where inner_window==outer_window: because InnerClipRect.Max.y is conservatively ==outer_window->ClipRect.Max.y,
+        // we never can mark tables above the scroll line as fully clipped. Taking advantage of LastOuterHeight would yield good results there...
+        column->IsClippedX = (column->ClipRect.Max.x <= column->ClipRect.Min.x);
+        column->IsClippedY = (column->ClipRect.Max.y <= column->ClipRect.Min.y);
 
-        column->IsSkipItems = !column->IsEnabled || table->HostSkipItems;
+        // Mark column as SkipItems (ignoring all items/layout)
+        column->IsSkipItems = false;
+        if (!column->IsEnabled || table->HostSkipItems)
+            column->IsSkipItems = true;
+        //else if ((column->IsClippedX || column->IsClippedY) && (column->Flags & ImGuiTableColumnFlags_AutoCull))
+        //    if ((column->AutoFitQueue & 1) == 0 && (column->CannotSkipItemsQueue & 1) == 0)
+        //        column->IsSkipItems = true;
+
+        // Update masks
+        if (column->IsClippedX || column->IsClippedY)
+            table->ClippedMaskByIndex |= ((ImU64)1 << column_n);
+        if (column->IsSkipItems)
+        {
+            table->SkipItemsMaskByIndex |= ((ImU64)1 << column_n);
+            IM_ASSERT(column->IsClippedX || column->IsClippedY);
+        }
 
         // Detect hovered column
         if (is_hovering_table && g.IO.MousePos.x >= column->ClipRect.Min.x && g.IO.MousePos.x < column->ClipRect.Max.x)
@@ -1412,7 +1430,7 @@ void ImGui::TableUpdateDrawChannels(ImGuiTable* table)
     const int freeze_row_multiplier = (table->FreezeRowsCount > 0) ? 2 : 1;
     const int channels_for_row = (table->Flags & ImGuiTableFlags_NoClip) ? 1 : table->ColumnsEnabledCount;
     const int channels_for_bg = 1 + 1 * freeze_row_multiplier;
-    const int channels_for_dummy = (table->ColumnsEnabledCount < table->ColumnsCount || table->EnabledUnclippedMaskByIndex != table->EnabledMaskByIndex) ? +1 : 0;
+    const int channels_for_dummy = (table->ColumnsEnabledCount < table->ColumnsCount || table->ClippedMaskByIndex != ~table->EnabledMaskByIndex) ? +1 : 0;
     const int channels_total = channels_for_bg + (channels_for_row * freeze_row_multiplier) + channels_for_dummy;
     table->DrawSplitter.Split(table->InnerWindow->DrawList, channels_total);
     table->DummyDrawChannel = (ImU8)((channels_for_dummy > 0) ? channels_total - 1 : -1);
@@ -1423,7 +1441,7 @@ void ImGui::TableUpdateDrawChannels(ImGuiTable* table)
     for (int column_n = 0; column_n < table->ColumnsCount; column_n++)
     {
         ImGuiTableColumn* column = &table->Columns[column_n];
-        if (!column->IsClipped)
+        if (!column->IsClippedX && !column->IsClippedY)
         {
             column->DrawChannelFrozen = (ImU8)(draw_channel_current);
             column->DrawChannelUnfrozen = (ImU8)(draw_channel_current + (table->FreezeRowsCount > 0 ? channels_for_row + 1 : 0));
@@ -1488,7 +1506,7 @@ void    ImGui::TableReorderDrawChannelsForMerge(ImGuiTable* table)
     // 1. Scan channels and take note of those which can be merged
     for (int column_n = 0; column_n < table->ColumnsCount; column_n++)
     {
-        if (!(table->EnabledUnclippedMaskByIndex & ((ImU64)1 << column_n)))
+        if (table->ClippedMaskByIndex & ((ImU64)1 << column_n))
             continue;
         ImGuiTableColumn* column = &table->Columns[column_n];
 
@@ -1993,7 +2011,7 @@ bool    ImGui::TableNextColumn()
 
     // FIXME-TABLE: it is likely to alter layout if user skips a columns contents based on clipping.
     int column_n = table->CurrentColumn;
-    return (table->EnabledUnclippedMaskByIndex & ((ImU64)1 << column_n)) != 0;
+    return (table->SkipItemsMaskByIndex & ((ImU64)1 << column_n)) == 0;
 }
 
 bool    ImGui::TableSetColumnIndex(int column_n)
@@ -2012,7 +2030,7 @@ bool    ImGui::TableSetColumnIndex(int column_n)
     }
 
     // FIXME-TABLE: it is likely to alter layout if user skips a columns contents based on clipping.
-    return (table->EnabledUnclippedMaskByIndex & ((ImU64)1 << column_n)) != 0;
+    return (table->SkipItemsMaskByIndex & ((ImU64)1 << column_n)) == 0;
 }
 
 int ImGui::TableGetColumnCount()
@@ -2041,7 +2059,7 @@ bool    ImGui::TableGetColumnIsClipped(int column_n)
         return false;
     if (column_n < 0)
         column_n = table->CurrentColumn;
-    return (table->EnabledUnclippedMaskByIndex & ((ImU64)1 << column_n)) == 0;
+    return (table->ClippedMaskByIndex & ((ImU64)1 << column_n)) != 0;
 }
 
 bool    ImGui::TableGetColumnIsEnabled(int column_n)
@@ -2575,7 +2593,7 @@ void ImGui::TableSetBgColor(ImGuiTableBgTarget bg_target, ImU32 color, int colum
             return;
         if (column_n == -1)
             column_n = table->CurrentColumn;
-        if ((table->EnabledUnclippedMaskByIndex & ((ImU64)1 << column_n)) == 0)
+        if ((table->ClippedMaskByIndex & ((ImU64)1 << column_n)) != 0)
             return;
         if (table->RowCellDataCurrent < 0 || table->RowCellData[table->RowCellDataCurrent].Column != column_n)
             table->RowCellDataCurrent++;
@@ -3049,7 +3067,7 @@ void ImGui::DebugNodeTable(ImGuiTable* table)
     char buf[512];
     char* p = buf;
     const char* buf_end = buf + IM_ARRAYSIZE(buf);
-    const bool is_active = (table->LastFrameActive >= ImGui::GetFrameCount() - 2);
+    const bool is_active = (table->LastFrameActive >= ImGui::GetFrameCount() - 2); // Note that fully clipped early out scrolling tables will appear as inactive here.
     ImFormatString(p, buf_end - p, "Table 0x%08X (%d columns, in '%s')%s", table->ID, table->ColumnsCount, table->OuterWindow->Name, is_active ? "" : " *Inactive*");
     if (!is_active) { PushStyleColor(ImGuiCol_Text, GetStyleColorVec4(ImGuiCol_TextDisabled)); }
     bool open = TreeNode(table, "%s", buf);
@@ -3070,13 +3088,13 @@ void ImGui::DebugNodeTable(ImGuiTable* table)
         const char* name = TableGetColumnName(table, n);
         ImFormatString(buf, IM_ARRAYSIZE(buf),
             "Column %d order %d name '%s': offset %+.2f to %+.2f\n"
-            "Visible: %d, Clipped: %d, SkipItems: %d, DrawChannels: %d,%d\n"
+            "Visible: %d, ClippedX/Y: %d/%d, SkipItems: %d, DrawChannels: %d,%d\n"
             "WidthGiven: %.1f, Request/Auto: %.1f/%.1f, StretchWeight: %.3f\n"
             "MinX: %.1f, MaxX: %.1f (%+.1f), ClipRect: %.1f to %.1f (+%.1f)\n"
             "ContentWidth: %.1f,%.1f, HeadersUsed/Ideal %.1f/%.1f\n"
             "Sort: %d%s, UserID: 0x%08X, Flags: 0x%04X: %s%s%s%s..",
             n, column->DisplayOrder, name, column->MinX - table->WorkRect.Min.x, column->MaxX - table->WorkRect.Min.x,
-            column->IsEnabled, column->IsClipped, column->IsSkipItems, column->DrawChannelFrozen, column->DrawChannelUnfrozen,
+            column->IsEnabled, column->IsClippedX, column->IsClippedY, column->IsSkipItems, column->DrawChannelFrozen, column->DrawChannelUnfrozen,
             column->WidthGiven, column->WidthRequest, column->WidthAuto, column->StretchWeight,
             column->MinX, column->MaxX, column->MaxX - column->MinX, column->ClipRect.Min.x, column->ClipRect.Max.x, column->ClipRect.Max.x - column->ClipRect.Min.x,
             column->ContentMaxXFrozen - column->WorkMinX, column->ContentMaxXUnfrozen - column->WorkMinX, column->ContentMaxXHeadersUsed - column->WorkMinX, column->ContentMaxXHeadersIdeal - column->WorkMinX,
