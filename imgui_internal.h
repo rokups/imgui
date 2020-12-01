@@ -1966,7 +1966,7 @@ struct ImGuiTable
     ImU64                       EnabledMaskByDisplayOrder;  // Column DisplayOrder -> IsEnabled map
     ImU64                       EnabledMaskByIndex;         // Column Index -> IsEnabled map (== not hidden by user/api) in a format adequate for iterating column without touching cold data
     ImU64                       ClippedMaskByIndex;         // Column Index -> (IsClippedX|IsClippedX) map (== hidden by user/api || hidden by scrolling/cliprect)
-    ImU64                       SkipItemsMaskByIndex;       // Column Index -> IsSkipItems map (== not hidden by user/api)
+    ImU64                       SkipItemsMaskByIndex;       // Column Index -> IsSkipItems map (== not hidden by user/api && (!Clipped || (Clipped && !AutoCull))
     ImGuiTableFlags             SettingsLoadedFlags;        // Which data were loaded from the .ini file (e.g. when order is not altered we won't save order)
     int                         SettingsOffset;             // Offset in g.SettingsTables
     int                         LastFrameActive;

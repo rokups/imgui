@@ -87,6 +87,47 @@
 //    | EndChild()                              - (if ScrollX/ScrollY is set)
 //-----------------------------------------------------------------------------
 
+//-----------------------------------------------------------------------------
+// About clipping/culling of Rows in Tables:
+// - For large numbers of rows, it is recommended you use ImGuiListClipper to only submit visible rows.
+//   ImGuiListClipper is reliant on the fact that rows are of equal height.
+//   See 'Demo > Tables > Vertical Scrolling' or 'Demo > Tables > Advanced' for a demo of using the clipper.
+//-----------------------------------------------------------------------------
+// About clipping/culling of Columns in Tables:
+// - Case A: column is not hidden by user, and at least partially in sight (most common case).
+// - Case B: column is clipped / out of sight (because of scrolling or parent ClipRect): TableNextColumn() return false as a hint but we still allow layout output.
+// - Case C: column is hidden explicitly by the user (e.g. via the context menu, or _DefaultHide column flag, etc.).
+//
+//                        [A]         [B]          [C]         
+//  TableNextColumn():    true        false        false       -> [userland] when TableNextColumn() / TableSetColumnIndex() return false, user should ideally skip submitting items.
+//          SkipItems:    false       false        true        -> [internal] when SkipItems is true, most widgets will early out if submitted, resulting is no layout output.
+//           ClipRect:    normal      zero-width   zero-width  -> [internal] when ClipRect is zero, ItemAdd() will return false and most widgets will early out mid-way.
+//  ImDrawList output:    normal      dummy        dummy       -> [internal] when using the dummy channel, ImDrawList submissions (if any) will be wasted (because cliprect is zero-width anyway).
+//
+// - We need distinguish those cases because non-hidden columns that are clipped outside of scrolling bounds should still contribute their height to the row.
+//   However, in the majority of cases, the contribution to row height is the same for all columns, or the tallest cells are known by the programmer.
+//-----------------------------------------------------------------------------
+// About clipping/culling of whole Tables:
+// - Scrolling tables with a known outer size can be clipped earlier as BeginTable() will return false.
+//-----------------------------------------------------------------------------
+
+// - Hidden explicitly
+//   - return false
+//   - skip items = true
+//   -> all good
+
+// - Hidden by scroll or parent-clip
+//   - (!) currently return false. when hidden by parent-clip currently lead to contents never submitted, breaks layout
+//   - skip items = false --> we let submission and layout happen
+// IDEALLY
+// - skip items should be true if clipped but only for column not altering row height
+//
+// -> 1. expose TableGetColumnVisibleAndNotClipped
+// -> 2. implement flags (per columns, per table for optimal default policy) 
+// -> Q: How can user distinguish hidden explicitly vs hidden by scroll or parent-clip?
+
+//-----------------------------------------------------------------------------
+
 // Configuration
 static const int TABLE_DRAW_CHANNEL_BG0 = 0;
 static const int TABLE_DRAW_CHANNEL_BG1_FROZEN = 1;
@@ -2009,7 +2050,6 @@ bool    ImGui::TableNextColumn()
         TableBeginCell(table, 0);
     }
 
-    // FIXME-TABLE: it is likely to alter layout if user skips a columns contents based on clipping.
     int column_n = table->CurrentColumn;
     return (table->SkipItemsMaskByIndex & ((ImU64)1 << column_n)) == 0;
 }
@@ -2029,7 +2069,6 @@ bool    ImGui::TableSetColumnIndex(int column_n)
         TableBeginCell(table, column_n);
     }
 
-    // FIXME-TABLE: it is likely to alter layout if user skips a columns contents based on clipping.
     return (table->SkipItemsMaskByIndex & ((ImU64)1 << column_n)) == 0;
 }
 

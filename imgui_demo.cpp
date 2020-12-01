@@ -3358,6 +3358,7 @@ static void EditTableColumnsFlags(ImGuiTableColumnFlags* p_flags)
     ImGui::CheckboxFlags("_PreferSortDescending", p_flags, ImGuiTableColumnFlags_PreferSortDescending);
     ImGui::CheckboxFlags("_IndentEnable", p_flags, ImGuiTableColumnFlags_IndentEnable); ImGui::SameLine(); HelpMarker("Default for column 0");
     ImGui::CheckboxFlags("_IndentDisable", p_flags, ImGuiTableColumnFlags_IndentDisable); ImGui::SameLine(); HelpMarker("Default for column >0");
+    ImGui::CheckboxFlags("_AutoCull", p_flags, ImGuiTableColumnFlags_AutoCull);
 }
 
 static void ShowDemoWindowTables()
@@ -3409,6 +3410,9 @@ static void ShowDemoWindowTables()
 
         // [Method 1] Using TableNextRow() to create a new row, and TableSetColumnIndex() to select the column.
         // In many situations, this is the most flexible and easy to use pattern.
+        // Because TableSetColumnIndex() returns 'false' when the column is not visible, so we can avoid
+        // submitting our cell contents. This is not mandatory: you may ignore the return value of
+        // TableSetColumnIndex() and still submit your contents if it's simpler for you, it just won't be visible.
         HelpMarker("Using TableNextRow() + calling TableSetColumnIndex() _before_ each cell, in a loop.");
         if (ImGui::BeginTable("##table1", 3))
         {
@@ -3417,7 +3421,8 @@ static void ShowDemoWindowTables()
                 ImGui::TableNextRow();
                 for (int column = 0; column < 3; column++)
                 {
-                    ImGui::TableSetColumnIndex(column);
+                    if (!ImGui::TableSetColumnIndex(column) && column != 0)
+                        continue;
                     ImGui::Text("Row %d Column %d", row, column);
                 }
             }
@@ -3426,6 +3431,9 @@ static void ShowDemoWindowTables()
 
         // [Method 2] Using TableNextColumn() called multiple times, instead of using a for loop + TableSetColumnIndex().
         // This is generally more convenient when you have code manually submitting the contents of each columns.
+        // Much like TableSetColumnIndex(), TableNextColumn() also return 'false' when the column is not visible.
+        // Here we decide to ignore the return value of TableNextColumn() as a convenience to make the code simpler.
+        // If we had heavy-lifting contents inside our cell we could decide to test TableNextColumn() return value.
         HelpMarker("Using TableNextRow() + calling TableNextColumn() _before_ each cell, manually.");
         if (ImGui::BeginTable("##table2", 3))
         {
@@ -3517,9 +3525,7 @@ static void ShowDemoWindowTables()
                 ImGui::TableNextRow();
                 for (int column = 0; column < 3; column++)
                 {
-                    if (!ImGui::TableSetColumnIndex(column))
-                        continue;
-
+                    ImGui::TableSetColumnIndex(column);
                     char buf[32];
                     sprintf(buf, "Hello %d,%d", column, row);
                     if (contents_type == CT_Text)
@@ -3873,7 +3879,7 @@ static void ShowDemoWindowTables()
                 for (int column = 0; column < 7; column++)
                 {
                     // Both TableNextColumn() and TableSetColumnIndex() return false when a column is not visible, which can be used for clipping.
-                    if (!ImGui::TableSetColumnIndex(column))
+                    if (!ImGui::TableSetColumnIndex(column) && column != 0)
                         continue;
                     if (column == 0)
                         ImGui::Text("Line %d", row);
