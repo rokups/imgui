@@ -2838,7 +2838,6 @@ void ImGui::TableHeadersRow()
         TableUpdateLayout(table);
 
     // Open row
-    const float row_y1 = GetCursorScreenPos().y;
     const float row_height = TableGetHeaderRowHeight();
     TableNextRow(ImGuiTableRowFlags_Headers, row_height);
     if (table->HostSkipItems) // Merely an optimization, you may skip in your own code.
@@ -2860,10 +2859,22 @@ void ImGui::TableHeadersRow()
     }
 
     // Allow opening popup from the right-most section after the last column.
-    ImVec2 mouse_pos = ImGui::GetMousePos();
-    if (IsMouseReleased(1) && TableGetHoveredColumn() == columns_count)
-        if (mouse_pos.y >= row_y1 && mouse_pos.y < row_y1 + row_height)
+    float unused_x1 = ImMax(table->WorkRect.Min.x, table->Columns[table->RightMostEnabledColumn].ClipRect.Max.x);
+    float button_w = table->OuterRect.Max.x - unused_x1;
+    if (button_w > 0)
+    {
+        ImRect bb;
+        bool hovered = false;
+        bb.Min = ImVec2(unused_x1, table->RowPosY1);
+        bb.Max = bb.Min + ImVec2(button_w, row_height);
+        PushClipRect(bb.Min, bb.Max, false);
+        PushID(-(table->InstanceCurrent + 1));
+        ButtonBehavior(bb, GetID("##PastLastColumn"), &hovered, NULL);
+        PopID();
+        if (hovered && IsMouseReleased(1))
             TableOpenContextMenu(-1); // Will open a non-column-specific popup.
+        PopClipRect();
+    }
 }
 
 // Emit a column header (text + optional sort order)
