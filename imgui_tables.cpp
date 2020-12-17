@@ -105,7 +105,7 @@ Index of this file:
 // - Case B: column is clipped / out of sight (because of scrolling or parent ClipRect): TableNextColumn() return false as a hint but we still allow layout output.
 // - Case C: column is hidden explicitly by the user (e.g. via the context menu, or _DefaultHide column flag, etc.).
 //
-//                        [A]         [B]          [C]         
+//                        [A]         [B]          [C]
 //  TableNextColumn():    true        false        false       -> [userland] when TableNextColumn() / TableSetColumnIndex() return false, user can skip submitting items but only if the column doesn't contribute to row height.
 //          SkipItems:    false       false        true        -> [internal] when SkipItems is true, most widgets will early out if submitted, resulting is no layout output.
 //           ClipRect:    normal      zero-width   zero-width  -> [internal] when ClipRect is zero, ItemAdd() will return false and most widgets will early out mid-way.
@@ -761,7 +761,7 @@ void ImGui::TableUpdateLayout(ImGuiTable* table)
             IM_ASSERT(column->Flags & ImGuiTableColumnFlags_WidthStretch);
 
             // Revert or initialize weight (when column->StretchWeight < 0.0f normally it means there has been no init value so it'll always default to 1.0f)
-            if (column->AutoFitQueue != 0x00 || column->StretchWeight < 0.0f) 
+            if (column->AutoFitQueue != 0x00 || column->StretchWeight < 0.0f)
                 column->StretchWeight = (column->InitStretchWeightOrWidth > 0.0f) ? column->InitStretchWeightOrWidth : 1.0f;
 
             sum_weights_stretched += column->StretchWeight;
@@ -2587,7 +2587,6 @@ void ImGui::TableHeadersRow()
     IM_ASSERT(table != NULL && "Need to call TableHeadersRow() after BeginTable()!");
 
     // Open row
-    const float row_y1 = GetCursorScreenPos().y;
     const float row_height = TableGetHeaderRowHeight();
     TableNextRow(ImGuiTableRowFlags_Headers, row_height);
     if (table->HostSkipItems) // Merely an optimization, you may skip in your own code.
@@ -2609,10 +2608,22 @@ void ImGui::TableHeadersRow()
     }
 
     // Allow opening popup from the right-most section after the last column.
-    ImVec2 mouse_pos = ImGui::GetMousePos();
-    if (IsMouseReleased(1) && TableGetHoveredColumn() == columns_count)
-        if (mouse_pos.y >= row_y1 && mouse_pos.y < row_y1 + row_height)
+    float unused_x1 = ImMax(table->WorkRect.Min.x, table->Columns[table->RightMostEnabledColumn].ClipRect.Max.x);
+    float button_w = table->OuterRect.Max.x - unused_x1;
+    if (button_w > 0)
+    {
+        ImRect bb;
+        bool hovered = false;
+        bb.Min = ImVec2(unused_x1, table->RowPosY1);
+        bb.Max = bb.Min + ImVec2(button_w, row_height);
+        PushClipRect(bb.Min, bb.Max, false);
+        PushID(-(table->InstanceCurrent + 1));
+        ButtonBehavior(bb, GetID("##PastLastColumn"), &hovered, NULL);
+        PopID();
+        if (hovered && IsMouseReleased(1))
             TableOpenContextMenu(-1); // Will open a non-column-specific popup.
+        PopClipRect();
+    }
 }
 
 // Emit a column header (text + optional sort order)
