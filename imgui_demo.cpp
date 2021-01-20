@@ -5793,6 +5793,19 @@ void ImGui::ShowFontSelector(const char* label)
         "- If you need to add/remove fonts at runtime (e.g. for DPI change), do it before calling NewFrame().");
 }
 
+// [Internal] Display info tooltip of a glyph, called by NodeFont() and ShowStyleEditor().
+static void GlyphTooltip(const ImFontGlyph* glyph)
+{
+    ImGui::BeginTooltip();
+    ImGui::Text("Codepoint: U+%04X", glyph->Codepoint);
+    ImGui::Separator();
+    ImGui::Text("Visible: %d", glyph->Visible);
+    ImGui::Text("AdvanceX: %.1f", glyph->AdvanceX);
+    ImGui::Text("Pos: (%.2f,%.2f)->(%.2f,%.2f)", glyph->X0, glyph->Y0, glyph->X1, glyph->Y1);
+    ImGui::Text("UV: (%.3f,%.3f)->(%.3f,%.3f)", glyph->U0, glyph->V0, glyph->U1, glyph->V1);
+    ImGui::EndTooltip();
+}
+
 // [Internal] Display details for a single font, called by ShowStyleEditor().
 static void NodeFont(ImFont* font)
 {
@@ -5862,16 +5875,7 @@ static void NodeFont(ImFont* font)
                 if (glyph)
                     font->RenderChar(draw_list, cell_size, cell_p1, glyph_col, (ImWchar)(base + n));
                 if (glyph && ImGui::IsMouseHoveringRect(cell_p1, cell_p2))
-                {
-                    ImGui::BeginTooltip();
-                    ImGui::Text("Codepoint: U+%04X", base + n);
-                    ImGui::Separator();
-                    ImGui::Text("Visible: %d", glyph->Visible);
-                    ImGui::Text("AdvanceX: %.1f", glyph->AdvanceX);
-                    ImGui::Text("Pos: (%.2f,%.2f)->(%.2f,%.2f)", glyph->X0, glyph->Y0, glyph->X1, glyph->Y1);
-                    ImGui::Text("UV: (%.3f,%.3f)->(%.3f,%.3f)", glyph->U0, glyph->V0, glyph->U1, glyph->V1);
-                    ImGui::EndTooltip();
-                }
+                    GlyphTooltip(glyph);
             }
             ImGui::Dummy(ImVec2((cell_size + cell_spacing) * 16, (cell_size + cell_spacing) * 16));
             ImGui::TreePop();
@@ -6049,7 +6053,27 @@ void ImGui::ShowStyleEditor(ImGuiStyle* ref)
             {
                 ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
                 ImVec4 border_col = ImVec4(1.0f, 1.0f, 1.0f, 0.5f);
+                ImVec2 atlas_base = ImGui::GetCursorScreenPos();
                 ImGui::Image(atlas->TexID, ImVec2((float)atlas->TexWidth, (float)atlas->TexHeight), ImVec2(0, 0), ImVec2(1, 1), tint_col, border_col);
+
+                for (int i = 0; i < atlas->Fonts.Size; i++)
+                {
+                    ImFont* font = atlas->Fonts[i];
+                    for (int j = 0; j < font->Glyphs.Size; j++)
+                    {
+                        ImFontGlyph& glyph = font->Glyphs[j];
+                        ImVec2 min(atlas_base.x + glyph.U0 * atlas->TexWidth + atlas->TexGlyphPadding, atlas_base.y + glyph.V0 * atlas->TexHeight + atlas->TexGlyphPadding);
+                        ImVec2 max(atlas_base.x + glyph.U1 * atlas->TexWidth + atlas->TexGlyphPadding, atlas_base.y + glyph.V1 * atlas->TexHeight + atlas->TexGlyphPadding);
+                        ImVec2 pos = ImGui::GetMousePos();
+                        if (min.x <= pos.x && pos.x <= max.x && min.y <= pos.y && pos.y <= max.y)
+                        {
+                            GetForegroundDrawList()->AddRect(min, max, IM_COL32(255, 255, 0, 100));
+                            GlyphTooltip(&glyph);
+                            break;
+                        }
+                    }
+                }
+
                 ImGui::TreePop();
             }
 
