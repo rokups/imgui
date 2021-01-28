@@ -2586,6 +2586,8 @@ struct ImFontBuildSrcData
 // Common font builder context used by both STB and FreeType rasterizers.
 struct ImFontBuilderContext
 {
+    ImVector<ImWchar>   DynamicRangesToPack;
+    ImBitVector*        DynamicRangesPacked;
     stbrp_node*         RectPackNodes;
     stbrp_context*      RectPackContext;
 };
@@ -2595,14 +2597,14 @@ struct ImFontBuilderIO
 {
     void*               (*FontBuilder_ContextCreate)();
     void                (*FontBuilder_ContextDestroy)(void* context);
-    bool                (*FontBuilder_Build)(ImFontAtlas* atlas);
+    bool                (*FontBuilder_Build)(ImFontAtlas* atlas, const ImWchar* glyph_ranges);
 };
 
 // Helper for font builder
 IMGUI_API const ImFontBuilderIO* ImFontAtlasGetBuilderForStbTruetype();
 IMGUI_API void      ImFontAtlasBuildInit(ImFontAtlas* atlas);
 IMGUI_API void      ImFontAtlasBuildSetupFont(ImFontAtlas* atlas, ImFont* font, ImFontConfig* font_config, float ascent, float descent);
-IMGUI_API void      ImFontAtlasBuildPackCustomRects(ImFontAtlas* atlas, void* stbrp_context_opaque);
+IMGUI_API void      ImFontAtlasBuildPackCustomRects(ImFontAtlas* atlas);
 IMGUI_API void      ImFontAtlasBuildFinish(ImFontAtlas* atlas);
 IMGUI_API void      ImFontAtlasBuildRender8bppRectFromString(ImFontAtlas* atlas, int x, int y, int w, int h, const char* in_str, char in_marker_char, unsigned char in_marker_pixel_value);
 IMGUI_API void      ImFontAtlasBuildRender32bppRectFromString(ImFontAtlas* atlas, int x, int y, int w, int h, const char* in_str, char in_marker_char, unsigned int in_marker_pixel_value);

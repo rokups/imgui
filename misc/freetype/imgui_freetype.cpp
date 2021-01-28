@@ -29,8 +29,6 @@
 // - For correct results you need to be using sRGB and convert to linear space in the pixel shader output.
 // - The default dear imgui styles will be impacted by this change (alpha values will need tweaking).
 
-// FIXME: cfg.OversampleH, OversampleV are not supported (but perhaps not so necessary with this rasterizer).
-
 #include "imgui_freetype.h"
 #include "imgui_internal.h"     // ImMin,ImMax,ImFontAtlasBuild*,
 #include <stdint.h>
@@ -370,25 +368,27 @@ struct ImFontBuildSrcDataFT
 };
 
 void ImFontAtlasBuildInitializeTexture(ImFontAtlas* atlas);
-bool ImFontAtlasBuildTempDataInit(ImFontAtlas* atlas, ImVector<ImFontBuildSrcData>& src_tmp_array, ImVector<ImFontBuildDstData>& dst_tmp_array);
+bool ImFontAtlasBuildTempDataInit(ImFontAtlas* atlas, ImVector<ImFontBuildSrcData>& src_tmp_array, ImVector<ImFontBuildDstData>& dst_tmp_array, const ImWchar* glyph_ranges);
 bool ImFontAtlasBuildTempDataAddCodepoint(ImFontBuildSrcData& src_tmp, ImFontBuildDstData& dst_tmp, ImWchar codepoint);
 void ImFontAtlasBuildTempDataUnpackBitmap(ImVector<ImFontBuildSrcData>& src_tmp_array, ImVector<ImFontBuildDstData>& dst_tmp_array);
-void ImFontAtlasBuildEstimateTextureWidth(ImFontAtlas* atlas, int total_surface);
+int ImFontAtlasBuildEstimateTextureWidth(ImFontAtlas* atlas, int total_surface);
 void ImFontAtlasBuildRectPackInit(ImFontAtlas* atlas, int height);
 void ImFontAtlasBuildPackRects(ImFontAtlas* atlas, ImVector<ImFontBuildSrcData>& src_tmp_array);
 void ImFontAtlasBuildAllocTexture(ImFontAtlas* atlas, bool use_32bpp);
 void* ImFontAtlasBuildContextInit();
 void ImFontAtlasBuildContextDestroy(void* context);
 
-bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, unsigned int extra_flags)
+bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, unsigned int extra_flags, const ImWchar* glyph_ranges)
 {
     IM_ASSERT(atlas->ConfigData.Size > 0);
-    ImFontBuilderContext* builder_context = (ImFontBuilderContext*)atlas->FontBuilderContext;
+    bool is_built = atlas->IsBuilt();
 
     ImFontAtlasBuildInit(atlas);
 
     // Clear atlas
-    ImFontAtlasBuildInitializeTexture(atlas);
+    atlas->TexID = (ImTextureID)NULL;
+    if (!is_built)
+        ImFontAtlasBuildInitializeTexture(atlas);
 
     // Temporary storage for building
     bool src_load_color = false;
@@ -397,7 +397,7 @@ bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, u
     ImVector<ImFontBuildDstData> dst_tmp_array;
 
     // 1. Initialize font loading structure, check font data validity
-    if (!ImFontAtlasBuildTempDataInit(atlas, src_tmp_array, dst_tmp_array))
+    if (!ImFontAtlasBuildTempDataInit(atlas, src_tmp_array, dst_tmp_array, glyph_ranges))
         return false;
 
     src_usr_array.resize(src_tmp_array.Size);
@@ -418,13 +418,21 @@ bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, u
     int total_glyphs_count = 0;
     for (int src_i = 0; src_i < src_tmp_array.Size; src_i++)
     {
+        ImFontConfig& cfg = atlas->ConfigData[src_i];
         ImFontBuildSrcDataFT& src_usr = src_usr_array[src_i];
         ImFontBuildSrcData& src_tmp = src_tmp_array[src_i];
         ImFontBuildDstData& dst_tmp = dst_tmp_array[src_tmp.DstIndex];
 
+        // FIXME-ATLAS: cfg.OversampleH, OversampleV are not supported (but perhaps not so necessary with this rasterizer).
+        // FIXME-ATLAS: We reset them to 1 because custom rect glyph packing (namely ellipsis baking) would use this.
+        cfg.OversampleH = cfg.OversampleV = 1;
+
         for (const ImWchar* src_range = src_tmp.SrcRanges; src_range[0] && src_range[1]; src_range += 2)
             for (unsigned int codepoint = src_range[0]; codepoint <= src_range[1]; codepoint++)
             {
+                if (is_built && cfg.DstFont->FindGlyphNoFallback(codepoint) != NULL)
+                    continue;                                                           // Already rasterized.
+
                 uint32_t glyph_index = FT_Get_Char_Index(src_usr.Font.Face, codepoint); // It is actually in the font? (FIXME-OPT: We are not storing the glyph_index..)
                 if (glyph_index == 0)
                     continue;
@@ -520,22 +528,21 @@ bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, u
         }
     }
 
-    ImFontAtlasBuildEstimateTextureWidth(atlas, total_surface);
+    if (atlas->TexWidth == 0)
+        atlas->TexWidth = ImFontAtlasBuildEstimateTextureWidth(atlas, total_surface);
 
     // 5. Start packing
     // Pack our extra data rectangles first, so it will be on the upper-left corner of our texture (UV will have small values).
     const int TEX_HEIGHT_MAX = 1024 * 32;
-    ImFontAtlasBuildRectPackInit(atlas, TEX_HEIGHT_MAX);
-    ImFontAtlasBuildPackCustomRects(atlas, builder_context->RectPackContext);
+    if (!is_built)
+        ImFontAtlasBuildRectPackInit(atlas, TEX_HEIGHT_MAX);
+    ImFontAtlasBuildPackCustomRects(atlas);
 
     // 6. Pack each source font. No rendering yet, we are working with rectangles in an infinitely tall texture at this point.
     ImFontAtlasBuildPackRects(atlas, src_tmp_array);
 
     // 7. Allocate texture
     ImFontAtlasBuildAllocTexture(atlas, src_load_color);
-
-    // End packing
-    ImFontAtlasBuildContextDestroy(atlas->FontBuilderContext);  // FIXME-ATLAS: This should not be here and will be removed in future commit when we support incremental atlas rasterization.
 
     // 8. Copy rasterized font characters back into the main texture
     // 9. Setup ImFont and glyphs for runtime
@@ -553,12 +560,15 @@ bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, u
         ImFontConfig& cfg = atlas->ConfigData[src_i];
         ImFont* dst_font = cfg.DstFont;
 
-        const float ascent = src_usr.Font.Info.Ascender;
-        const float descent = src_usr.Font.Info.Descender;
-        ImFontAtlasBuildSetupFont(atlas, dst_font, &cfg, ascent, descent);
+        if (!is_built)
+        {
+            const float ascent = src_usr.Font.Info.Ascender;
+            const float descent = src_usr.Font.Info.Descender;
+            ImFontAtlasBuildSetupFont(atlas, dst_font, &cfg, ascent, descent);
+        }
+
         const float font_off_x = cfg.GlyphOffset.x;
         const float font_off_y = cfg.GlyphOffset.y + IM_ROUND(dst_font->Ascent);
-
         const int padding = atlas->TexGlyphPadding;
         for (int glyph_i = 0; glyph_i < src_tmp.GlyphsCount; glyph_i++)
         {
@@ -621,7 +631,7 @@ bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, u
         src_tmp_array[src_i].~ImFontBuildSrcData();
 
     ImFontAtlasBuildFinish(atlas);
-
+    atlas->WantTextureUpdate = true;
     return true;
 }
 
@@ -659,7 +669,7 @@ static void* FreeType_Realloc(FT_Memory /*memory*/, long cur_size, long new_size
     return block;
 }
 
-static bool ImFontAtlasBuildWithFreeType(ImFontAtlas* atlas)
+static bool ImFontAtlasBuildWithFreeType(ImFontAtlas* atlas, const ImWchar* glyph_ranges)
 {
     // FreeType memory management: https://www.freetype.org/freetype2/docs/design/design-4.html
     FT_MemoryRec_ memory_rec = {};
@@ -677,7 +687,7 @@ static bool ImFontAtlasBuildWithFreeType(ImFontAtlas* atlas)
     // If you don't call FT_Add_Default_Modules() the rest of code may work, but FreeType won't use our custom allocator.
     FT_Add_Default_Modules(ft_library);
 
-    bool ret = ImFontAtlasBuildWithFreeTypeEx(ft_library, atlas, atlas->FontBuilderFlags);
+    bool ret = ImFontAtlasBuildWithFreeTypeEx(ft_library, atlas, atlas->FontBuilderFlags, glyph_ranges);
     FT_Done_Library(ft_library);
 
     return ret;
