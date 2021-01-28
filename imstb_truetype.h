@@ -586,7 +586,8 @@ typedef struct stbtt_fontinfo stbtt_fontinfo;
 typedef struct stbrp_rect stbrp_rect;
 #endif
 
-STBTT_DEF int  stbtt_PackBegin(stbtt_pack_context *spc, unsigned char *pixels, int width, int height, int stride_in_bytes, int padding, void *alloc_context);
+// [DEAR IMGUI] Added "stbrp_context *context".
+STBTT_DEF int  stbtt_PackBegin(stbtt_pack_context *spc, unsigned char *pixels, int width, int height, int stride_in_bytes, int padding, void *alloc_context, stbrp_context *context);
 // Initializes a packing context stored in the passed-in stbtt_pack_context.
 // Future calls using this context will pack characters into the bitmap passed
 // in here: a 1-channel bitmap that is width * height. stride_in_bytes is
@@ -3794,15 +3795,17 @@ static void stbrp_pack_rects(stbrp_context *con, stbrp_rect *rects, int num_rect
 // This is SUPER-AWESOME (tm Ryan Gordon) packing using stb_rect_pack.h. If
 // stb_rect_pack.h isn't available, it uses the BakeFontBitmap strategy.
 
-STBTT_DEF int stbtt_PackBegin(stbtt_pack_context *spc, unsigned char *pixels, int pw, int ph, int stride_in_bytes, int padding, void *alloc_context)
+// [DEAR IMGUI] Added "stbrp_context *context".
+STBTT_DEF int stbtt_PackBegin(stbtt_pack_context *spc, unsigned char *pixels, int pw, int ph, int stride_in_bytes, int padding, void *alloc_context, stbrp_context *context)
 {
-   stbrp_context *context = (stbrp_context *) STBTT_malloc(sizeof(*context)            ,alloc_context);
-   int            num_nodes = pw - padding;
-   stbrp_node    *nodes   = (stbrp_node    *) STBTT_malloc(sizeof(*nodes  ) * num_nodes,alloc_context);
+   // [DEAR IMGUI] allocated externally.
+   //stbrp_context *context = (stbrp_context *) STBTT_malloc(sizeof(*context)            ,alloc_context);
+   //int            num_nodes = pw - padding;
+   //stbrp_node    *nodes   = (stbrp_node    *) STBTT_malloc(sizeof(*nodes  ) * num_nodes,alloc_context);
 
-   if (context == NULL || nodes == NULL) {
-      if (context != NULL) STBTT_free(context, alloc_context);
-      if (nodes   != NULL) STBTT_free(nodes  , alloc_context);
+   if (context == NULL /*|| nodes == NULL*/) {
+      //if (context != NULL) STBTT_free(context, alloc_context);  // [DEAR IMGUI]
+      //if (nodes   != NULL) STBTT_free(nodes  , alloc_context);  // [DEAR IMGUI]
       return 0;
    }
 
@@ -3811,14 +3814,15 @@ STBTT_DEF int stbtt_PackBegin(stbtt_pack_context *spc, unsigned char *pixels, in
    spc->height = ph;
    spc->pixels = pixels;
    spc->pack_info = context;
-   spc->nodes = nodes;
+   spc->nodes = context->free_head;  // [DEAR IMGUI]
    spc->padding = padding;
    spc->stride_in_bytes = stride_in_bytes != 0 ? stride_in_bytes : pw;
    spc->h_oversample = 1;
    spc->v_oversample = 1;
    spc->skip_missing = 0;
 
-   stbrp_init_target(context, pw-padding, ph-padding, nodes, num_nodes);
+   // [DEAR IMGUI] Initialized externally.
+   //stbrp_init_target(context, pw-padding, ph-padding, nodes, num_nodes);
 
    if (pixels)
       STBTT_memset(pixels, 0, pw*ph); // background of 0 around pixels
@@ -3826,11 +3830,12 @@ STBTT_DEF int stbtt_PackBegin(stbtt_pack_context *spc, unsigned char *pixels, in
    return 1;
 }
 
-STBTT_DEF void stbtt_PackEnd  (stbtt_pack_context *spc)
-{
-   STBTT_free(spc->nodes    , spc->user_allocator_context);
-   STBTT_free(spc->pack_info, spc->user_allocator_context);
-}
+// [DEAR IMGUI] No longer used.
+//STBTT_DEF void stbtt_PackEnd  (stbtt_pack_context *spc)
+//{
+//   STBTT_free(spc->nodes    , spc->user_allocator_context);
+//   STBTT_free(spc->pack_info, spc->user_allocator_context);
+//}
 
 STBTT_DEF void stbtt_PackSetOversampling(stbtt_pack_context *spc, unsigned int h_oversample, unsigned int v_oversample)
 {
