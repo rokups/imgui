@@ -4436,6 +4436,7 @@ void ImGui::EndFrame()
 
     // Unlock font atlas
     g.IO.Fonts->Locked = false;
+    g.IO.Fonts->RasterizeNewGlyphs();
 
     // Clear Input data for next frame
     g.IO.MouseWheel = g.IO.MouseWheelH = 0.0f;
