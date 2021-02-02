@@ -6189,6 +6189,11 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         // Update contents size from last frame for auto-fitting (or use explicit size)
         CalcWindowContentSizes(window, &window->ContentSize, &window->ContentSizeIdeal);
+
+        // FIXME: These flags are decremented before they are used. This means that in order to have these fields
+        //  produce their intended behaviors for one frame we must set them to at least 2, which is counter-intuitive.
+        //  HiddenFramesCannotSkipItems is a more complicated case because it has a single usage before this code block
+        //  and may be set below before it is finally checked.
         if (window->HiddenFramesCanSkipItems > 0)
             window->HiddenFramesCanSkipItems--;
         if (window->HiddenFramesCannotSkipItems > 0)
@@ -12821,20 +12826,16 @@ void ImGui::DockContextProcessUndockNode(ImGuiContext* ctx, ImGuiDockNode* node)
 // This is mostly used for automation.
 bool ImGui::DockContextCalcDropPosForDocking(ImGuiWindow* target, ImGuiDockNode* target_node, ImGuiWindow* payload, ImGuiDir split_dir, bool split_outer, ImVec2* out_pos)
 {
-    if (split_outer)
-    {
-        IM_ASSERT(0);
-    }
-    else
-    {
-        ImGuiDockPreviewData split_data;
-        DockNodePreviewDockSetup(target, target_node, payload, &split_data, false, split_outer);
-        if (split_data.DropRectsDraw[split_dir+1].IsInverted())
-            return false;
-        *out_pos = split_data.DropRectsDraw[split_dir+1].GetCenter();
-        return true;
-    }
-    return false;
+    // In DockNodePreviewDockSetup() for a root central node instead of showing both "inner" and "outer" drop rects
+    // (which would be functionally identical) we only show the outer one. Reflect this here.
+    if (target_node && target_node->ParentNode == NULL && target_node->IsCentralNode() && split_dir != ImGuiDir_None)
+        split_outer = true;
+    ImGuiDockPreviewData split_data;
+    DockNodePreviewDockSetup(target, target_node, payload, &split_data, false, split_outer);
+    if (split_data.DropRectsDraw[split_dir+1].IsInverted())
+        return false;
+    *out_pos = split_data.DropRectsDraw[split_dir+1].GetCenter();
+    return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -13613,7 +13614,7 @@ bool ImGui::DockNodeBeginAmendTabBar(ImGuiDockNode* node)
     PushOverrideID(node->ID);
     bool ret = BeginTabBarEx(node->TabBar, node->TabBar->BarRect, node->TabBar->Flags, node);
     IM_UNUSED(ret);
-    IM_ASSERT(ret);    
+    IM_ASSERT(ret);
     return true;
 }
 
@@ -16431,6 +16432,12 @@ void ImGui::DebugNodeDockNode(ImGuiDockNode* node, const char* label)
             CheckboxFlags("LocalFlags: HiddenTabBar", &node->LocalFlags, ImGuiDockNodeFlags_HiddenTabBar);
             CheckboxFlags("LocalFlags: NoWindowMenuButton", &node->LocalFlags, ImGuiDockNodeFlags_NoWindowMenuButton);
             CheckboxFlags("LocalFlags: NoCloseButton", &node->LocalFlags, ImGuiDockNodeFlags_NoCloseButton);
+            ImGuiDockNodeFlags temp_flag = node->LocalFlags; CheckboxFlags("LocalFlags: DockSpace", &temp_flag, ImGuiDockNodeFlags_DockSpace);
+            temp_flag = node->LocalFlags; CheckboxFlags("LocalFlags: CentralNode", &temp_flag, ImGuiDockNodeFlags_CentralNode);
+            temp_flag = node->LocalFlags; CheckboxFlags("LocalFlags: NoDockingSplitMe", &temp_flag, ImGuiDockNodeFlags_NoDockingSplitMe);
+            temp_flag = node->LocalFlags; CheckboxFlags("LocalFlags: NoDockingSplitOther", &temp_flag, ImGuiDockNodeFlags_NoDockingSplitOther);
+            temp_flag = node->LocalFlags; CheckboxFlags("LocalFlags: NoDockingOverMe", &temp_flag, ImGuiDockNodeFlags_NoDockingOverMe);
+            temp_flag = node->LocalFlags; CheckboxFlags("LocalFlags: NoDockingOverOther", &temp_flag, ImGuiDockNodeFlags_NoDockingOverOther);
             TreePop();
         }
         if (node->ParentNode)
