@@ -5,8 +5,10 @@
 // Read online: https://github.com/ocornut/imgui/tree/master/docs
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_sdl.h"
 #include "imgui_impl_opengl3.h"
+#include "misc/freetype/imgui_freetype.h"
 #include <stdio.h>
 #include <SDL.h>
 
@@ -131,16 +133,18 @@ int main(int, char**)
     // - Read 'docs/FONTS.md' for more instructions and details.
     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
     //io.Fonts->AddFontDefault();
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
+    io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
     //IM_ASSERT(font != NULL);
+    //io.Fonts->FontBuilderIO = ImGuiFreeType::GetBuilderForFreeType();
 
     // Our state
     bool show_demo_window = true;
     bool show_another_window = false;
+    bool add_glyph = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     // Main loop
@@ -160,6 +164,28 @@ int main(int, char**)
                 done = true;
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
                 done = true;
+        }
+
+        if (add_glyph)
+        {
+            add_glyph = false;
+            int idx = io.Fonts->AddCustomRectFontGlyph(GImGui->Font, 0x2222, 8, 8, 10, {1, 4}, false);
+            if (idx >= 0)
+            {
+                ImWchar range[] = {0x2222, 0x2222, 0};
+                io.Fonts->Build(range);
+                int stride = 0; void* data;
+                io.Fonts->GetCustomRectFontGlyphTexData(idx, &data, &stride);
+                for (int i = 0; i < 8; i++)
+                    for (int j = 0; j < 8; j++)
+                        *((unsigned char*) data + (i * stride) + j) = (i + j) % 2 ? 0xFF : 0x00;
+            }
+        }
+        if (io.Fonts->WantTextureUpdate)
+        {
+            io.Fonts->WantTextureUpdate = false;
+            ImGui_ImplOpenGL3_DestroyFontsTexture();
+            ImGui_ImplOpenGL3_CreateFontsTexture();
         }
 
         // Start the Dear ImGui frame
@@ -190,6 +216,14 @@ int main(int, char**)
             ImGui::SameLine();
             ImGui::Text("counter = %d", counter);
 
+            add_glyph |= ImGui::Button("Add glyph \u2222");
+            ImGui::Button("Show Glyph");
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted("\u2202");
+                ImGui::EndTooltip();
+            }
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::End();
         }
