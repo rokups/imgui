@@ -2631,8 +2631,6 @@ struct ImFontAtlas
     IMGUI_API void              CalcCustomRectUV(const ImFontAtlasCustomRect* rect, ImVec2* out_uv_min, ImVec2* out_uv_max) const;
     IMGUI_API bool              GetMouseCursorTexData(ImGuiMouseCursor cursor, ImVec2* out_offset, ImVec2* out_size, ImVec2 out_uv_border[2], ImVec2 out_uv_fill[2]);
     IMGUI_API const ImFontBuilderIO* GetFontBuilderIO();
-    IMGUI_API void              RequestRasterize(ImWchar c);
-    IMGUI_API void              RasterizeNewGlyphs();
 
     //-------------------------------------------
     // Members
@@ -2706,8 +2704,10 @@ struct ImFont
     // Methods
     IMGUI_API ImFont();
     IMGUI_API ~ImFont();
-    IMGUI_API const ImFontGlyph*FindGlyph(ImWchar c) const;
-    IMGUI_API const ImFontGlyph*FindGlyphNoFallback(ImWchar c) const;
+    IMGUI_API const ImFontGlyph*FindGlyph(ImWchar c) const;                                         // Find and return a glyph, or fallback glyph if specified one does not exist. Should not be used in font rasterization code path to check for existence of a glyph!
+    IMGUI_API const ImFontGlyph*FindGlyphNoFallback(ImWchar c) const;                               // Find and return a glyph, or NULL if specified one does not exist. Should not be used in font rasterization code path to check for existence of a glyph!
+    IMGUI_API const ImFontGlyph*RasterizeGlyphPage(ImWchar c, const ImFontGlyph* fallback) const;   // Rasterize 128 glyphs close to specified glyph, and return specified glyph if it exists or fallback otherwise.
+    IMGUI_API bool              HasGlyph(ImWchar c) const;                                          // Used for checking presence of a glyph. Safe to use in font rasterization path.
     float                       GetCharAdvance(ImWchar c) const     { return ((int)c < IndexAdvanceX.Size) ? IndexAdvanceX[(int)c] : FallbackAdvanceX; }
     bool                        IsLoaded() const                    { return ContainerAtlas != NULL; }
     const char*                 GetDebugName() const                { return ConfigData ? ConfigData->Name : "<unknown>"; }

@@ -2586,8 +2586,6 @@ struct ImFontBuildSrcData
 // Common font builder context used by both STB and FreeType rasterizers.
 struct ImFontBuilderContext
 {
-    ImVector<ImWchar>   DynamicRangesToPack;
-    ImBitVector*        DynamicRangesPacked;
     stbrp_node*         RectPackNodes;
     stbrp_context*      RectPackContext;
 };
