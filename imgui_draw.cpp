@@ -3398,6 +3398,8 @@ ImFont::ImFont()
     Ascent = Descent = 0.0f;
     MetricsTotalSurface = 0;
     memset(Used4kPagesMap, 0, sizeof(Used4kPagesMap));
+    LookupTableGlyphCount = 0;
+    MaxCodepoint = -1;
 }
 
 ImFont::~ImFont()
@@ -3427,12 +3429,9 @@ void ImFont::BuildLookupTable()
 
     // Build lookup table
     IM_ASSERT(Glyphs.Size < 0xFFFF); // -1 is reserved
-    IndexAdvanceX.clear();  // FIXME-ATLAS: Can this become an incremental operation?
-    IndexLookup.clear();
     DirtyLookupTables = false;
-    memset(Used4kPagesMap, 0, sizeof(Used4kPagesMap));
     GrowIndex(max_codepoint + 1);
-    for (int i = 0; i < Glyphs.Size; i++)
+    for (int i = LookupTableGlyphCount; i < Glyphs.Size; i++)
     {
         int codepoint = (int)Glyphs[i].Codepoint;
         IndexAdvanceX[codepoint] = Glyphs[i].AdvanceX;
@@ -3464,9 +3463,12 @@ void ImFont::BuildLookupTable()
     // Setup fall-backs
     FallbackGlyph = FindGlyphNoFallback(FallbackChar);
     FallbackAdvanceX = FallbackGlyph ? FallbackGlyph->AdvanceX : 0.0f;
-    for (int i = 0; i < max_codepoint + 1; i++)
+    for (int i = MaxCodepoint + 1; i < max_codepoint + 1; i++)
         if (IndexAdvanceX[i] < 0.0f)
             IndexAdvanceX[i] = FallbackAdvanceX;
+
+    LookupTableGlyphCount = Glyphs.Size;
+    MaxCodepoint = max_codepoint;
 }
 
 // API is designed this way to avoid exposing the 4K page size
