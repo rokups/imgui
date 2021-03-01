@@ -386,7 +386,8 @@ bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, u
     ImFontAtlasBuildInit(atlas);
 
     // Clear atlas
-    atlas->TexID = (ImTextureID)NULL;
+    // FIXME-ATLAS: See explanation of this detail at the start of ImFontAtlasBuildWithStbTruetype().
+    //atlas->TexID = (ImTextureID)NULL;
     if (!is_built)
         ImFontAtlasBuildInitializeTexture(atlas);
 
@@ -430,7 +431,7 @@ bool ImFontAtlasBuildWithFreeTypeEx(FT_Library ft_library, ImFontAtlas* atlas, u
         for (const ImWchar* src_range = src_tmp.SrcRanges; src_range[0] && src_range[1]; src_range += 2)
             for (unsigned int codepoint = src_range[0]; codepoint <= src_range[1]; codepoint++)
             {
-                if (is_built && cfg.DstFont->FindGlyphNoFallback(codepoint) != NULL)
+                if (is_built && cfg.DstFont->HasGlyph(codepoint))
                     continue;                                                           // Already rasterized.
 
                 uint32_t glyph_index = FT_Get_Char_Index(src_usr.Font.Face, codepoint); // It is actually in the font? (FIXME-OPT: We are not storing the glyph_index..)

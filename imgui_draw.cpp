@@ -1993,7 +1993,8 @@ void    ImFontAtlas::ClearInputData()
 
 void    ImFontAtlas::ClearTexData()
 {
-    IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
+    // FIXME-ATLAS: Do we need this? We can rasterize CPU texture buffer just fine when atlas is locked.
+    //IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
     if (TexPixelsAlpha8)
         IM_FREE(TexPixelsAlpha8);
     if (TexPixelsRGBA32)
@@ -2264,38 +2265,6 @@ bool ImFontAtlas::GetMouseCursorTexData(ImGuiMouseCursor cursor_type, ImVec2* ou
     return true;
 }
 
-void ImFontAtlas::RequestRasterize(ImWchar c)
-{
-    // FIXME-ATLAS: Rasterizing ranges only of a particular font would be useful.
-    ImFontBuilderContext* builder_context = (ImFontBuilderContext*)FontBuilderContext;
-    ImVector<ImWchar>& ranges_to_pack = builder_context->DynamicRangesToPack;
-    ImBitVector* ranges_packed = builder_context->DynamicRangesPacked;
-
-    ImWchar page = c & 0xFFFFFF00;          // Dynamically rasterize glyphs in chunks of 128.
-    if (ranges_packed->TestBit(page))
-        return;                             // Already tried to dynamically rasterize that page.
-
-    if (ranges_to_pack.find(page) == ranges_to_pack.end())
-    {
-        ranges_packed->SetBit(page);
-        ranges_to_pack.push_back(page);
-        ranges_to_pack.push_back(page + 0xFF);
-    }
-}
-
-void ImFontAtlas::RasterizeNewGlyphs()
-{
-    ImFontBuilderContext* builder_context = (ImFontBuilderContext*)FontBuilderContext;
-    ImVector<ImWchar>& ranges_to_pack = builder_context->DynamicRangesToPack;
-    if (ranges_to_pack.empty())
-        return;
-
-    IM_ASSERT((ranges_to_pack.Size % 2) == 0);  // Ranges come in pairs (start, end).
-    ranges_to_pack.push_back(0);                // Terminate range.
-    Build(ranges_to_pack.Data);
-    ranges_to_pack.clear();
-}
-
 const ImFontBuilderIO* ImFontAtlas::GetFontBuilderIO()
 {
     // Select builder
@@ -2319,7 +2288,8 @@ const ImFontBuilderIO* ImFontAtlas::GetFontBuilderIO()
 
 bool    ImFontAtlas::Build(const ImWchar* glyph_ranges)
 {
-    IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
+    // FIXME-ATLAS: Do we need this? We can build font atlas just fine during the frame.
+    //IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
 
     const ImFontBuilderIO* builder_io = GetFontBuilderIO();
     if (FontBuilderContext == NULL)
@@ -2573,8 +2543,6 @@ void* ImFontAtlasBuildContextInit()
 {
     static ImFontBuilderContextStb context;
     memset(&context, 0, sizeof(context));
-    context.DynamicRangesPacked = IM_NEW(ImBitVector);
-    context.DynamicRangesPacked->Create(IM_UNICODE_CODEPOINT_MAX);
     return &context;
 }
 
@@ -2590,7 +2558,6 @@ void ImFontAtlasBuildContextDestroy(void* context)
         builder_context->RectPackNodes = NULL;
         builder_context->RectPackContext = NULL;
     }
-    builder_context->DynamicRangesToPack.clear();
 }
 
 static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas, const ImWchar* glyph_ranges)
@@ -2602,7 +2569,12 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas, const ImWchar* g
     ImFontAtlasBuildInit(atlas);
 
     // Clear atlas
-    atlas->TexID = (ImTextureID)NULL;
+    // FIXME-ATLAS: Existing texture id is not cleared because currently i is used in some asserts
+    //  and for rendering. Ideally we want to be able to update this texture id in ImDrawCmd when it
+    //  gets updated during the frame. This depends on following work:
+    //  https://github.com/ocornut/imgui_private/issues/3
+    //  https://github.com/ocornut/imgui/pull/3761
+    //atlas->TexID = (ImTextureID)NULL;
     if (!is_built)
         ImFontAtlasBuildInitializeTexture(atlas);
 
@@ -2642,7 +2614,7 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas, const ImWchar* g
         for (const ImWchar* src_range = src_tmp.SrcRanges; src_range[0] && src_range[1]; src_range += 2)
             for (unsigned int codepoint = src_range[0]; codepoint <= src_range[1]; codepoint++)
             {
-                if (is_built && cfg.DstFont->FindGlyphNoFallback(codepoint) != NULL)
+                if (is_built && cfg.DstFont->HasGlyph(codepoint))
                     continue;                                               // Already rasterized.
 
                 if (!stbtt_FindGlyphIndex(&src_usr.FontInfo, codepoint))    // It is actually in the font?
@@ -3020,7 +2992,7 @@ void ImFontAtlasFindOrBakeEllipsis(ImFontAtlas* atlas)
             continue;
         const ImWchar ellipsis_variants[] = { (ImWchar)0x2026, (ImWchar)0x0085 };
         for (int j = 0; j < IM_ARRAYSIZE(ellipsis_variants); j++)
-            if (font->FindGlyphNoFallback(ellipsis_variants[j]) != NULL) // Verify glyph exists
+            if (font->HasGlyph(ellipsis_variants[j])) // Verify glyph exists
             {
                 font->EllipsisChar = ellipsis_variants[j];
                 break;
@@ -3086,7 +3058,7 @@ void ImFontAtlasRegisterCustomRectGlyphs(ImFontAtlas* atlas)
     for (int i = atlas->RegisteredCustomGlyphNum; i < atlas->CustomRects.Size; i++)
     {
         const ImFontAtlasCustomRect* r = &atlas->CustomRects[i];
-        if (r->Font == NULL || r->GlyphID == 0 || r->Font->FindGlyphNoFallback(r->GlyphID) != NULL)
+        if (r->Font == NULL || r->GlyphID == 0 || r->Font->HasGlyph(r->GlyphID))
             continue;
 
         // Will ignore ImFontConfig settings: GlyphMinAdvanceX, GlyphMinAdvanceY, GlyphExtraSpacing, PixelSnapH
@@ -3455,7 +3427,7 @@ void ImFont::BuildLookupTable()
 
     // Build lookup table
     IM_ASSERT(Glyphs.Size < 0xFFFF); // -1 is reserved
-    IndexAdvanceX.clear();
+    IndexAdvanceX.clear();  // FIXME-ATLAS: Can this become an incremental operation?
     IndexLookup.clear();
     DirtyLookupTables = false;
     memset(Used4kPagesMap, 0, sizeof(Used4kPagesMap));
@@ -3596,7 +3568,7 @@ void ImFont::AddRemapChar(ImWchar dst, ImWchar src, bool overwrite_dst)
 const ImFontGlyph* ImFont::FindGlyph(ImWchar c) const
 {
     if (c >= (size_t)IndexLookup.Size)
-        return FallbackGlyph;
+        return RasterizeGlyphPage(c, FallbackGlyph);
     const ImWchar i = IndexLookup.Data[c];
     if (i == (ImWchar)-1)
         return FallbackGlyph;
@@ -3606,11 +3578,37 @@ const ImFontGlyph* ImFont::FindGlyph(ImWchar c) const
 const ImFontGlyph* ImFont::FindGlyphNoFallback(ImWchar c) const
 {
     if (c >= (size_t)IndexLookup.Size)
-        return NULL;
+        return RasterizeGlyphPage(c, NULL);
     const ImWchar i = IndexLookup.Data[c];
     if (i == (ImWchar)-1)
         return NULL;
     return &Glyphs.Data[i];
+}
+
+const ImFontGlyph* ImFont::RasterizeGlyphPage(ImWchar c, const ImFontGlyph* fallback) const
+{
+    // FIXME-ATLAS: Rasterizing ranges only of a particular font would be useful.
+    // Dynamically rasterize glyphs in chunks of 128.
+    const ImWchar page = c & 0xFFFFFF00;
+    const ImWchar ranges_to_pack[] = { page, (ImWchar)(page + 0xFF), 0 };
+    ContainerAtlas->Build(ranges_to_pack);
+
+    // Return newly rasterized glyph if found.
+    IM_ASSERT(c < (size_t)IndexLookup.Size);
+    const ImWchar i = IndexLookup.Data[c];
+    if (i == (ImWchar)-1)
+        return fallback;
+    return &Glyphs.Data[i];
+}
+
+bool ImFont::HasGlyph(ImWchar c) const
+{
+    if (c >= (size_t)IndexLookup.Size)
+        return false;
+    const ImWchar i = IndexLookup.Data[c];
+    if (i == (ImWchar)-1)
+        return false;
+    return true;
 }
 
 const char* ImFont::CalcWordWrapPositionA(float scale, const char* text, const char* text_end, float wrap_width) const
@@ -3937,9 +3935,6 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         const ImFontGlyph* glyph = FindGlyph((ImWchar)c);
         if (glyph == NULL)
             continue;
-
-        if (glyph == FallbackGlyph && c != FallbackChar)
-            ContainerAtlas->RequestRasterize(c);
 
         float char_width = glyph->AdvanceX * scale;
         if (glyph->Visible)
