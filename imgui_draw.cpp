@@ -490,6 +490,13 @@ void ImDrawList::AddCallback(ImDrawCallback callback, void* callback_data)
 #define ImDrawCmd_HeaderSize                        (IM_OFFSETOF(ImDrawCmd, VtxOffset) + sizeof(unsigned int))
 #define ImDrawCmd_HeaderCompare(CMD_LHS, CMD_RHS)   (memcmp(CMD_LHS, CMD_RHS, ImDrawCmd_HeaderSize))    // Compare ClipRect, TextureId, VtxOffset
 #define ImDrawCmd_HeaderCopy(CMD_DST, CMD_SRC)      (memcpy(CMD_DST, CMD_SRC, ImDrawCmd_HeaderSize))    // Copy ClipRect, TextureId, VtxOffset
+#define ImRect_AddPoint(bb, pos)          \
+    do {                                  \
+        if (bb.x > pos.x) bb.x = pos.x;   \
+        if (bb.y > pos.y) bb.y = pos.y;   \
+        if (bb.z < pos.x) bb.z = pos.x;   \
+        if (bb.w < pos.y) bb.w = pos.y;   \
+    } while (false)
 
 // Our scheme may appears a bit unusual, basically we want the most-common calls AddLine AddRect etc. to not have to perform any check so we always have a command ready in the stack.
 // The cost of figuring out if a new command has to be added or if we can merge is paid in those Update** functions only.
@@ -658,6 +665,9 @@ void ImDrawList::PrimRect(const ImVec2& a, const ImVec2& c, ImU32 col)
     _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col;
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv; _VtxWritePtr[3].col = col;
+    ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+    ImRect_AddPoint(bb, a);
+    ImRect_AddPoint(bb, c);
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -673,6 +683,9 @@ void ImDrawList::PrimRectUV(const ImVec2& a, const ImVec2& c, const ImVec2& uv_a
     _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col;
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
+    ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+    ImRect_AddPoint(bb, a);
+    ImRect_AddPoint(bb, c);
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -687,6 +700,11 @@ void ImDrawList::PrimQuadUV(const ImVec2& a, const ImVec2& b, const ImVec2& c, c
     _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col;
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
+    ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+    ImRect_AddPoint(bb, a);
+    ImRect_AddPoint(bb, b);
+    ImRect_AddPoint(bb, c);
+    ImRect_AddPoint(bb, d);
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -709,6 +727,20 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
     const ImVec2 opaque_uv = _Data->TexUvWhitePixel;
     const int count = closed ? points_count : points_count - 1; // The number of line segments we need to draw
     const bool thick_line = (thickness > _FringeScale);
+
+    if ((flags & ImDrawFlags_NoAddToBoundingRect) == 0)
+    {
+        float v;
+        float half_thickness = thickness * 0.5f;
+        ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+        for (const ImVec2* p = points, *end = &points[points_count]; p < end; p++)
+        {
+            v = p->x - half_thickness; if (bb.x > v) bb.x = v;
+            v = p->x + half_thickness; if (bb.z < v) bb.z = v;
+            v = p->y - half_thickness; if (bb.y > v) bb.y = v;
+            v = p->y + half_thickness; if (bb.w < v) bb.w = v;
+        }
+    }
 
     if (Flags & ImDrawListFlags_AntiAliasedLines)
     {
@@ -956,12 +988,19 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
 }
 
 // We intentionally avoid using ImVec2 and its math operators here to reduce cost to a minimum for debug/non-inlined builds.
-void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_count, ImU32 col)
+void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_count, ImU32 col, ImDrawFlags flags)
 {
     if (points_count < 3)
         return;
 
     const ImVec2 uv = _Data->TexUvWhitePixel;
+
+    if ((flags & ImDrawFlags_NoAddToBoundingRect) == 0)
+    {
+        ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+        for (const ImVec2* p = points, *end = &points[points_count]; p < end; p++)
+            ImRect_AddPoint(bb, (*p));
+    }
 
     if (Flags & ImDrawListFlags_AntiAliasedFill)
     {
@@ -1395,7 +1434,10 @@ void ImDrawList::AddRectFilled(const ImVec2& p_min, const ImVec2& p_max, ImU32 c
     else
     {
         PathRect(p_min, p_max, rounding, flags);
-        PathFillConvex(col);
+        PathFillConvex(col, ImDrawFlags_NoAddToBoundingRect);
+        ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+        ImRect_AddPoint(bb, p_min);
+        ImRect_AddPoint(bb, p_max);
     }
 }
 
@@ -1413,6 +1455,9 @@ void ImDrawList::AddRectFilledMultiColor(const ImVec2& p_min, const ImVec2& p_ma
     PrimWriteVtx(ImVec2(p_max.x, p_min.y), uv, col_upr_right);
     PrimWriteVtx(p_max, uv, col_bot_right);
     PrimWriteVtx(ImVec2(p_min.x, p_max.y), uv, col_bot_left);
+    ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+    ImRect_AddPoint(bb, p_min);
+    ImRect_AddPoint(bb, p_max);
 }
 
 void ImDrawList::AddQuad(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, ImU32 col, float thickness)
@@ -3510,10 +3555,17 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         text_end = text_begin + strlen(text_begin); // ImGui:: functions generally already provides a valid text_end, so this is merely to handle direct calls.
 
     // Align to be pixel perfect
-    pos.x = IM_FLOOR(pos.x);
-    pos.y = IM_FLOOR(pos.y);
-    float x = pos.x;
-    float y = pos.y;
+    float x = pos.x = IM_FLOOR(pos.x);
+    float y = pos.y = IM_FLOOR(pos.y);
+    float min_x = +FLT_MAX;
+    float min_y = +FLT_MAX;
+    float max_x = -FLT_MAX;
+    float max_y = -FLT_MAX;
+    bool first_line = true;
+    bool first_char = true;
+    float last_x2 = x;
+    ImVec4& bb = draw_list->CmdBuffer.Data[draw_list->CmdBuffer.Size - 1].VtxBoundingRect;
+
     if (y > clip_rect.w)
         return;
 
@@ -3578,7 +3630,12 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
                 x = pos.x;
                 y += line_height;
                 word_wrap_eol = NULL;
-
+                first_line = false;
+                first_char = true;
+                if (max_x < last_x2)
+                    max_x = last_x2; // Last character position of previous line.
+                if (y > clip_rect.w)
+                    break; // break out of main loop
                 // Wrapping skips upcoming blanks
                 while (s < text_end)
                 {
@@ -3608,6 +3665,10 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
             {
                 x = pos.x;
                 y += line_height;
+                first_line = false;
+                first_char = true;
+                if (max_x < last_x2)
+                    max_x = last_x2; // Last character position of previous line.
                 if (y > clip_rect.w)
                     break; // break out of main loop
                 continue;
@@ -3625,7 +3686,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         {
             // We don't do a second finer clipping test on the Y axis as we've already skipped anything before clip_rect.y and exit once we pass clip_rect.w
             float x1 = x + glyph->X0 * scale;
-            float x2 = x + glyph->X1 * scale;
+            float x2 = x + glyph->X1 * scale; last_x2 = x2;
             float y1 = y + glyph->Y0 * scale;
             float y2 = y + glyph->Y1 * scale;
             if (x1 <= clip_rect.z && x2 >= clip_rect.x)
@@ -3666,6 +3727,21 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
                     }
                 }
 
+                // Measure min_x only for first character of the line.
+                if (first_char && min_x > x1)
+                    min_x = x1;
+
+                // Measure min_y only for first line.
+                if (first_line)
+                {
+                    if (min_y > y1)
+                        min_y = y1;
+                }
+
+                // Only important for the last line. First line can also be last one. What is an efficient way to detect last line?
+                if (max_y < y2)
+                    max_y = y2;
+
                 // Support for untinted glyphs
                 ImU32 glyph_col = glyph->Colored ? col_untinted : col;
 
@@ -3685,6 +3761,11 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
         }
         x += char_width;
     }
+
+    if (max_x < last_x2)
+        max_x = last_x2; // Line may not end with \n, measure max_x of final character.
+    ImRect_AddPoint(bb, ImVec2(min_x, min_y));
+    ImRect_AddPoint(bb, ImVec2(max_x, max_y));
 
     // Give back unused vertices (clipped ones, blanks) ~ this is essentially a PrimUnreserve() action.
     draw_list->VtxBuffer.Size = (int)(vtx_write - draw_list->VtxBuffer.Data); // Same as calling shrink()
