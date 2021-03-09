@@ -15528,6 +15528,11 @@ void ImGui::DebugNodeDrawCmdShowMeshAndBoundingBox(ImDrawList* out_draw_list, co
     {
         out_draw_list->AddRect(ImTrunc(clip_rect.Min), ImTrunc(clip_rect.Max), IM_COL32(255, 0, 255, 255)); // In pink: clipping rectangle submitted to GPU
         out_draw_list->AddRect(ImTrunc(vtxs_rect.Min), ImTrunc(vtxs_rect.Max), IM_COL32(0, 255, 255, 255)); // In cyan: bounding box of triangles
+
+        // Should precisely cover a cyan rect and only red one should be visible. A glimpse of cyan rect indicates a bug.
+        ImVec2 aabb_min = ImTrunc(ImVec2(draw_cmd->VtxBoundingRect.x, draw_cmd->VtxBoundingRect.y));
+        ImVec2 aabb_max = ImTrunc(ImVec2(draw_cmd->VtxBoundingRect.z, draw_cmd->VtxBoundingRect.w));
+        out_draw_list->AddRect(aabb_min, aabb_max, IM_COL32(255, 0, 0, 255)); // In red: aabb
     }
     out_draw_list->Flags = backup_flags;
 }

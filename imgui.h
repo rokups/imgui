@@ -2924,8 +2924,9 @@ struct ImDrawCmd
     unsigned int    ElemCount;          // 4    // Number of indices (multiple of 3) to be rendered as triangles. Vertices are stored in the callee ImDrawList's vtx_buffer[] array, indices in idx_buffer[].
     ImDrawCallback  UserCallback;       // 4-8  // If != NULL, call the function instead of rendering the vertices. clip_rect and texture_id will be set normally.
     void*           UserCallbackData;   // 4-8  // The draw callback code can access this.
+    ImVec4          VtxBoundingRect;    // 4*4  // The bounding rect of all submitted vertices.
 
-    ImDrawCmd() { memset(this, 0, sizeof(*this)); } // Also ensure our padding fields are zeroed
+    ImDrawCmd() { memset(this, 0, sizeof(*this)); VtxBoundingRect.x = VtxBoundingRect.y = +FLT_MAX; VtxBoundingRect.z = VtxBoundingRect.w = -FLT_MAX; } // Also ensure our padding fields are zeroed
 
     // Since 1.83: returns ImTextureID associated with this draw call. Warning: DO NOT assume this is always same as 'TextureId' (we will change this function for an upcoming feature)
     inline ImTextureID GetTexID() const { return TextureId; }
@@ -2998,6 +2999,7 @@ enum ImDrawFlags_
     ImDrawFlags_RoundCornersAll             = ImDrawFlags_RoundCornersTopLeft | ImDrawFlags_RoundCornersTopRight | ImDrawFlags_RoundCornersBottomLeft | ImDrawFlags_RoundCornersBottomRight,
     ImDrawFlags_RoundCornersDefault_        = ImDrawFlags_RoundCornersAll, // Default to ALL corners if none of the _RoundCornersXX flags are specified.
     ImDrawFlags_RoundCornersMask_           = ImDrawFlags_RoundCornersAll | ImDrawFlags_RoundCornersNone,
+    ImDrawFlags_NoAddToBoundingRect         = 1 << 9,  // Do not add any points to VtxBoundingRect. Used as an optimization, when points are added manually.
 };
 
 // Flags for ImDrawList instance. Those are set automatically by ImGui:: functions from ImGuiIO settings, and generally not manipulated directly.
@@ -3083,8 +3085,8 @@ struct ImDrawList
     // - Only simple polygons are supported by filling functions (no self-intersections, no holes).
     // - Concave polygon fill is more expensive than convex one: it has O(N^2) complexity. Provided as a convenience fo user but not used by main library.
     IMGUI_API void  AddPolyline(const ImVec2* points, int num_points, ImU32 col, ImDrawFlags flags, float thickness);
-    IMGUI_API void  AddConvexPolyFilled(const ImVec2* points, int num_points, ImU32 col);
-    IMGUI_API void  AddConcavePolyFilled(const ImVec2* points, int num_points, ImU32 col);
+    IMGUI_API void  AddConvexPolyFilled(const ImVec2* points, int num_points, ImU32 col, ImDrawFlags flags = 0);
+    IMGUI_API void  AddConcavePolyFilled(const ImVec2* points, int num_points, ImU32 col, ImDrawFlags flags = 0);
 
     // Image primitives
     // - Read FAQ to understand what ImTextureID is.
@@ -3100,8 +3102,8 @@ struct ImDrawList
     inline    void  PathClear()                                                 { _Path.Size = 0; }
     inline    void  PathLineTo(const ImVec2& pos)                               { _Path.push_back(pos); }
     inline    void  PathLineToMergeDuplicate(const ImVec2& pos)                 { if (_Path.Size == 0 || memcmp(&_Path.Data[_Path.Size - 1], &pos, 8) != 0) _Path.push_back(pos); }
-    inline    void  PathFillConvex(ImU32 col)                                   { AddConvexPolyFilled(_Path.Data, _Path.Size, col); _Path.Size = 0; }
-    inline    void  PathFillConcave(ImU32 col)                                  { AddConcavePolyFilled(_Path.Data, _Path.Size, col); _Path.Size = 0; }
+    inline    void  PathFillConvex(ImU32 col, ImDrawFlags flags = 0)            { AddConvexPolyFilled(_Path.Data, _Path.Size, col, flags); _Path.Size = 0; }
+    inline    void  PathFillConcave(ImU32 col, ImDrawFlags flags = 0)           { AddConcavePolyFilled(_Path.Data, _Path.Size, col, flags); _Path.Size = 0; }
     inline    void  PathStroke(ImU32 col, ImDrawFlags flags = 0, float thickness = 1.0f) { AddPolyline(_Path.Data, _Path.Size, col, flags, thickness); _Path.Size = 0; }
     IMGUI_API void  PathArcTo(const ImVec2& center, float radius, float a_min, float a_max, int num_segments = 0);
     IMGUI_API void  PathArcToFast(const ImVec2& center, float radius, int a_min_of_12, int a_max_of_12);                // Use precomputed angles for a 12 steps circle
@@ -3128,6 +3130,7 @@ struct ImDrawList
     // Advanced: Primitives allocations
     // - We render triangles (three vertices)
     // - All primitives needs to be reserved via PrimReserve() beforehand.
+    // - Cmd AABB must be updated with PrimAABB() if PrimVtx()/PrimWriteVtx() were used.
     IMGUI_API void  PrimReserve(int idx_count, int vtx_count);
     IMGUI_API void  PrimUnreserve(int idx_count, int vtx_count);
     IMGUI_API void  PrimRect(const ImVec2& a, const ImVec2& b, ImU32 col);      // Axis aligned rectangle (composed of two triangles)
@@ -3136,6 +3139,7 @@ struct ImDrawList
     inline    void  PrimWriteVtx(const ImVec2& pos, const ImVec2& uv, ImU32 col)    { _VtxWritePtr->pos = pos; _VtxWritePtr->uv = uv; _VtxWritePtr->col = col; _VtxWritePtr++; _VtxCurrentIdx++; }
     inline    void  PrimWriteIdx(ImDrawIdx idx)                                     { *_IdxWritePtr = idx; _IdxWritePtr++; }
     inline    void  PrimVtx(const ImVec2& pos, const ImVec2& uv, ImU32 col)         { PrimWriteIdx((ImDrawIdx)_VtxCurrentIdx); PrimWriteVtx(pos, uv, col); } // Write vertex with unique index
+    inline    void  PrimAABB(ImVec2 pos)                                            { ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect; if (bb.x > pos.x) bb.x = pos.x; if (bb.y > pos.y) bb.y = pos.y; if (bb.z < pos.x) bb.z = pos.x; if (bb.w < pos.y) bb.w = pos.y; }
 
     // Obsolete names
     //inline  void  AddEllipse(const ImVec2& center, float radius_x, float radius_y, ImU32 col, float rot = 0.0f, int num_segments = 0, float thickness = 1.0f) { AddEllipse(center, ImVec2(radius_x, radius_y), col, rot, num_segments, thickness); } // OBSOLETED in 1.90.5 (Mar 2024)
