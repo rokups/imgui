@@ -1427,6 +1427,7 @@ void ImGui::TableSetupColumn(const char* label, ImGuiTableColumnFlags flags, flo
 
     TableSetupColumnFlags(table, column, flags);
     column->UserID = user_id;
+    column->MaxY = table->RowPosY1;
     flags = column->Flags;
 
     // Initialize defaults
@@ -1721,6 +1722,12 @@ void ImGui::TableBeginRow(ImGuiTable* table)
     window->DC.IsSameLine = false;
     window->DC.CursorMaxPos.y = next_y1;
 
+    for (int i = 0; i < table->ColumnsCount; i++)
+    {
+        ImGuiTableColumn* column = &table->Columns[i];
+        column->MaxY = table->RowPosY1;
+    }
+
     // Making the header BG color non-transparent will allow us to overlay it multiple times when handling smooth dragging.
     if (table->RowFlags & ImGuiTableRowFlags_Headers)
     {
@@ -1949,7 +1956,7 @@ void ImGui::TableBeginCell(ImGuiTable* table, int column_n)
         start_x += table->RowIndentOffsetX; // ~~ += window.DC.Indent.x - table->HostIndentX, except we locked it for the row.
 
     window->DC.CursorPos.x = start_x;
-    window->DC.CursorPos.y = table->RowPosY1 + table->CellPaddingY;
+    window->DC.CursorPos.y = window->DC.CursorMaxPos.y = column->MaxY + table->CellPaddingY;
     window->DC.CursorMaxPos.x = window->DC.CursorPos.x;
     window->DC.ColumnsOffset.x = start_x - window->Pos.x - window->DC.Indent.x; // FIXME-WORKRECT
     window->DC.CurrLineTextBaseOffset = table->RowTextBaseline;
@@ -2007,7 +2014,9 @@ void ImGui::TableEndCell(ImGuiTable* table)
     else
         p_max_pos_x = table->IsUnfrozenRows ? &column->ContentMaxXUnfrozen : &column->ContentMaxXFrozen;
     *p_max_pos_x = ImMax(*p_max_pos_x, window->DC.CursorMaxPos.x);
-    table->RowPosY2 = ImMax(table->RowPosY2, window->DC.CursorMaxPos.y + table->CellPaddingY);
+    if (column->MaxY < window->DC.CursorMaxPos.y - table->CellPaddingY) // Avoid appending padding when switching between columns without appending anything to them.
+        column->MaxY = window->DC.CursorMaxPos.y + table->CellPaddingY;
+    table->RowPosY2 = ImMax(table->RowPosY2, column->MaxY);
     column->ItemWidth = window->DC.ItemWidth;
 
     // Propagate text baseline for the entire row
