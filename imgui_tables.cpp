@@ -1754,6 +1754,9 @@ void ImGui::TableEndRow(ImGuiTable* table)
 
     // Position cursor at the bottom of our row so it can be used for e.g. clipping calculation. However it is
     // likely that the next call to TableBeginCell() will reposition the cursor to take account of vertical padding.
+    // TableEndCell() applies ItemSpacing in case cell would be appended to. Replace ItemSpacing below last item with CellPaddingY 
+    if (table->RowPosY1 < table->RowPosY2)
+        table->RowPosY2 = table->RowPosY2 - g.Style.ItemSpacing.y + table->CellPaddingY;
     window->DC.CursorPos.y = table->RowPosY2;
 
     // Row background fill
@@ -1955,8 +1958,12 @@ void ImGui::TableBeginCell(ImGuiTable* table, int column_n)
     if (column->Flags & ImGuiTableColumnFlags_IndentEnable)
         start_x += table->RowIndentOffsetX; // ~~ += window.DC.Indent.x - table->HostIndentX, except we locked it for the row.
 
+    // Apply padding only at the start of the cell, but not when appending to it.
+    if (table->RowPosY1 == column->MaxY)
+        column->MaxY += table->CellPaddingY;
+
     window->DC.CursorPos.x = start_x;
-    window->DC.CursorPos.y = window->DC.CursorMaxPos.y = column->MaxY + table->CellPaddingY;
+    window->DC.CursorMaxPos.y = window->DC.CursorPos.y = column->MaxY;
     window->DC.CursorMaxPos.x = window->DC.CursorPos.x;
     window->DC.ColumnsOffset.x = start_x - window->Pos.x - window->DC.Indent.x; // FIXME-WORKRECT
     window->DC.CurrLineTextBaseOffset = table->RowTextBaseline;
@@ -2004,6 +2011,7 @@ void ImGui::TableBeginCell(ImGuiTable* table, int column_n)
 // [Internal] Called by TableNextRow()/TableSetColumnIndex()/TableNextColumn()
 void ImGui::TableEndCell(ImGuiTable* table)
 {
+    ImGuiContext& g = *GImGui;
     ImGuiTableColumn* column = &table->Columns[table->CurrentColumn];
     ImGuiWindow* window = table->InnerWindow;
 
@@ -2014,8 +2022,12 @@ void ImGui::TableEndCell(ImGuiTable* table)
     else
         p_max_pos_x = table->IsUnfrozenRows ? &column->ContentMaxXUnfrozen : &column->ContentMaxXFrozen;
     *p_max_pos_x = ImMax(*p_max_pos_x, window->DC.CursorMaxPos.x);
-    if (column->MaxY < window->DC.CursorMaxPos.y - table->CellPaddingY) // Avoid appending padding when switching between columns without appending anything to them.
-        column->MaxY = window->DC.CursorMaxPos.y + table->CellPaddingY;
+
+    // Avoid appending spacing when switching between columns without appending anything to them.
+    if (column->MaxY < window->DC.CursorMaxPos.y)
+        window->DC.CursorMaxPos.y += g.Style.ItemSpacing.y;
+
+    column->MaxY = window->DC.CursorMaxPos.y;
     table->RowPosY2 = ImMax(table->RowPosY2, column->MaxY);
     column->ItemWidth = window->DC.ItemWidth;
 
