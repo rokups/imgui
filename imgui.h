@@ -253,6 +253,18 @@ struct ImVec4
 // String view (non-owning pair of begin/end pointers, not necessarily zero-terminated)
 // ImStrv are used as function parameters instead of passing a pair of const char*.
 #define IMGUI_HAS_IMSTR 1
+
+// A helper macro for defining c++20 u8 strings. While ImStrv has support for char8_t* literals, implementation incurs
+// a small runtime (extra call per u8 literal) and convenience (stepping into extra call in debugger) cost in debug
+// builds. To avoid these issues IM_U8("utf-8 string") should be used instead of u8"utf-8 string". For extra convenience
+// you may #define U8 IM_U8 and shorten utf-8 string definition to U8("utf-8 string"). Use of char8_t* literals is
+// completely optional, char* strings are still treated as utf-8.
+#if defined(__cpp_char8_t)
+#define IM_U8(s) (const char*)u8##s
+#else
+#define IM_U8(s) s
+#endif
+
 struct ImStrv
 {
     const char* Begin;
@@ -260,6 +272,11 @@ struct ImStrv
     ImStrv()                            { Begin = End = NULL; }
     ImStrv(const char* b)               { Begin = b; End = b ? b + strlen(b) : NULL; }
     ImStrv(const char* b, const char* e){ Begin = b; End = e ? e : b + strlen(b); }
+#if defined(__cpp_char8_t)
+    struct char8_p { const char* Ptr; char8_p(const char8_t* p) { Ptr = (const char*)p; } operator const char*() const { return Ptr; } };
+    ImStrv(char8_p b)                   { Begin = b; End = b ? b + strlen(b) : NULL; }
+    ImStrv(char8_p b, char8_p e)        { Begin = b; End = e ? e : b + strlen(b); }
+#endif
     inline size_t length() const        { return (size_t)(End - Begin); }
     inline bool empty() const           { return Begin == End; }    // == "" or == NULL
     inline operator bool() const        { return Begin != NULL; }   // return true when valid ("" is valid, NULL construction is not)
