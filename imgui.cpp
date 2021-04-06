@@ -3754,8 +3754,9 @@ void ImGui::UpdateMouseWheel()
         }
     }
 
-    // Horizontal Mouse Wheel scrolling, or Vertical Mouse Wheel w/ Shift held
-    const float wheel_x = (g.IO.MouseWheelH != 0.0f && !g.IO.KeyShift) ? g.IO.MouseWheelH : (g.IO.MouseWheel != 0.0f && g.IO.KeyShift) ? g.IO.MouseWheel : 0.0f;
+    // Horizontal Mouse Wheel scrolling, or Vertical Mouse Wheel w/ Shift held. Disabled for MacOS because OS provides this feature.
+    bool shift = g.IO.KeyShift && !g.IO.ConfigMacOSXBehaviors;
+    const float wheel_x = (g.IO.MouseWheelH != 0.0f && !shift) ? g.IO.MouseWheelH : (g.IO.MouseWheel != 0.0f && shift) ? g.IO.MouseWheel : 0.0f;
     if (wheel_x != 0.0f && !g.IO.KeyCtrl)
     {
         StartLockWheelingWindow(window);
