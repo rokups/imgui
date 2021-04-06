@@ -3736,37 +3736,30 @@ void ImGui::UpdateMouseWheel()
         return;
     }
 
-    // Mouse wheel scrolling
+    // Mouse wheel scrolling. Direction is inverted when SHIFT is held (disabled for MacOS because OS provides this feature).
     // If a child window has the ImGuiWindowFlags_NoScrollWithMouse flag, we give a chance to scroll its parent
-
-    // Vertical Mouse Wheel scrolling
-    const float wheel_y = (g.IO.MouseWheel != 0.0f && !g.IO.KeyShift) ? g.IO.MouseWheel : 0.0f;
-    if (wheel_y != 0.0f && !g.IO.KeyCtrl)
+    const ImGuiAxis axis = ((g.IO.MouseWheelH != 0.0f) ^ (g.IO.KeyShift && !g.IO.ConfigMacOSXBehaviors)) ? ImGuiAxis_X : ImGuiAxis_Y;
+    const float wheel = (g.IO.MouseWheelH != 0.0f) ? g.IO.MouseWheelH : g.IO.MouseWheel;
+    if (wheel != 0.0f && !g.IO.KeyCtrl)
     {
         StartLockWheelingWindow(window);
-        while ((window->Flags & ImGuiWindowFlags_ChildWindow) && ((window->ScrollMax.y == 0.0f) || ((window->Flags & ImGuiWindowFlags_NoScrollWithMouse) && !(window->Flags & ImGuiWindowFlags_NoMouseInputs))))
+        while ((window->Flags & ImGuiWindowFlags_ChildWindow) && ((window->ScrollMax[axis] == 0.0f) || ((window->Flags & ImGuiWindowFlags_NoScrollWithMouse) && !(window->Flags & ImGuiWindowFlags_NoMouseInputs))))
             window = window->ParentWindow;
         if (!(window->Flags & ImGuiWindowFlags_NoScrollWithMouse) && !(window->Flags & ImGuiWindowFlags_NoMouseInputs))
         {
-            float max_step = window->InnerRect.GetHeight() * 0.67f;
-            float scroll_step = ImFloor(ImMin(5 * window->CalcFontSize(), max_step));
-            SetScrollY(window, window->Scroll.y - wheel_y * scroll_step);
-        }
-    }
-
-    // Horizontal Mouse Wheel scrolling, or Vertical Mouse Wheel w/ Shift held. Disabled for MacOS because OS provides this feature.
-    bool shift = g.IO.KeyShift && !g.IO.ConfigMacOSXBehaviors;
-    const float wheel_x = (g.IO.MouseWheelH != 0.0f && !shift) ? g.IO.MouseWheelH : (g.IO.MouseWheel != 0.0f && shift) ? g.IO.MouseWheel : 0.0f;
-    if (wheel_x != 0.0f && !g.IO.KeyCtrl)
-    {
-        StartLockWheelingWindow(window);
-        while ((window->Flags & ImGuiWindowFlags_ChildWindow) && ((window->ScrollMax.x == 0.0f) || ((window->Flags & ImGuiWindowFlags_NoScrollWithMouse) && !(window->Flags & ImGuiWindowFlags_NoMouseInputs))))
-            window = window->ParentWindow;
-        if (!(window->Flags & ImGuiWindowFlags_NoScrollWithMouse) && !(window->Flags & ImGuiWindowFlags_NoMouseInputs))
-        {
-            float max_step = window->InnerRect.GetWidth() * 0.67f;
-            float scroll_step = ImFloor(ImMin(2 * window->CalcFontSize(), max_step));
-            SetScrollX(window, window->Scroll.x - wheel_x * scroll_step);
+            const float step_ratio = 0.67f;
+            if (axis == ImGuiAxis_Y)
+            {
+                float max_step = window->InnerRect.GetHeight() * step_ratio;
+                float scroll_step = ImFloor(ImMin(5 * window->CalcFontSize(), max_step));
+                SetScrollY(window, window->Scroll.y - wheel * scroll_step);
+            }
+            else
+            {
+                float max_step = window->InnerRect.GetWidth() * step_ratio;
+                float scroll_step = ImFloor(ImMin(2 * window->CalcFontSize(), max_step));
+                SetScrollX(window, window->Scroll.x - wheel * scroll_step);
+            }
         }
     }
 }
