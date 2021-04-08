@@ -50,6 +50,9 @@ Other Changes:
   consistent with the compile-time default. (#3922)
 - DragScalar: Add default value for v_speed argument to match higher-level functions. (#3922) [@eliasdaler]
 - ColorEdit4: Alpha default to 255 (instead of 0) when omitted in hex input. (#3973) [@squadack]
+- ColorEdit4: Fixed not being able to change hue when saturation is 0. (#4014) [@rokups]
+- ColorEdit4: Fixed hue resetting to 0 when it is set to 255. [@rokups]
+- ColorEdit4: Fixed hue value jitter when source color is stored as rgb in 32bit integer. [@rokups]
 - InputText: Do not filter private unicode codepoints (e.g. icons) when pasted from clipboard. (#4005) [@dougbinks]
 - LabelText: Fixed clipping of multi-line value text when label is single-line. (#4004)
 - LabelText: Fixed vertical alignment of single-line value text when label is multi-line. (#4004)
