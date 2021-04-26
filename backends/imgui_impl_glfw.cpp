@@ -42,6 +42,8 @@
 
 // GLFW
 #include <GLFW/glfw3.h>
+#include <cstdio>
+
 #ifdef _WIN32
 #undef APIENTRY
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -111,6 +113,8 @@ void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int key, int scancode, int a
 {
     if (g_PrevUserCallbackKey != NULL)
         g_PrevUserCallbackKey(window, key, scancode, action, mods);
+
+    printf("KeyCallback %s key=%d, scancode=%d, mods=%08X\n", action == GLFW_PRESS ? "press  " : "release", key, scancode, mods);
 
     ImGuiIO& io = ImGui::GetIO();
     if (action == GLFW_PRESS)

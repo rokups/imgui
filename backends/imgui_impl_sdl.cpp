@@ -112,6 +112,7 @@ bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event* event)
     case SDL_KEYDOWN:
     case SDL_KEYUP:
         {
+            printf("SDL_KEY%s key=%08X, scancode=%d, mods=%04x\n", event->type == SDL_KEYDOWN ? "DOWN" : "UP  ", event->key.keysym.sym, event->key.keysym.scancode, event->key.keysym.mod);
             int key = event->key.keysym.scancode;
             IM_ASSERT(key >= 0 && key < IM_ARRAYSIZE(io.KeysDown));
             io.KeysDown[key] = (event->type == SDL_KEYDOWN);
