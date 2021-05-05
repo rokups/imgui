@@ -125,7 +125,7 @@ static const ImU64          IM_U64_MAX = (2ULL * 9223372036854775807LL + 1);
 
 // For InputTextEx()
 static bool             InputTextFilterCharacter(unsigned int* p_char, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data, ImGuiInputSource input_source);
-static int              InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end);
+static int              InputTextCalcLineCount(const char* text_begin, const char* text_end);
 static ImVec2           InputTextCalcTextSizeW(const ImWchar* text_begin, const ImWchar* text_end, const ImWchar** remaining = NULL, ImVec2* out_offset = NULL, bool stop_on_new_line = false);
 
 //-------------------------------------------------------------------------
@@ -3516,17 +3516,20 @@ bool ImGui::InputTextWithHint(const char* label, const char* hint, char* buf, si
     return InputTextEx(label, hint, buf, (int)buf_size, ImVec2(0, 0), flags, callback, user_data);
 }
 
-static int InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end)
+static int InputTextCalcLineCount(const char* text_begin, const char* text_end)
 {
     int line_count = 0;
     const char* s = text_begin;
-    while (char c = *s++) // We are only matching for \n so we can ignore UTF-8 decoding
+
+    if (text_begin == text_end)
+        return 1;   // One empty line.
+
+    for (char c = *s; c != 0 && s < text_end; c = *++s) // We are only matching for \n so we can ignore UTF-8 decoding
         if (c == '\n')
             line_count++;
-    s--;
-    if (s[0] != '\n' && s[0] != '\r')
+
+    if (s[-1] != '\n' && s[-1] != '\r')
         line_count++;
-    *out_text_end = s;
     return line_count;
 }
 
@@ -3958,9 +3961,10 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
         // Take a copy of the initial buffer value (both in original UTF-8 format and converted to wchar)
         // From the moment we focused we are ignoring the content of 'buf' (unless we are in read-only mode)
-        const int buf_len = (int)strlen(buf);
+        const int buf_len = buf_size ? (int)strnlen(buf, buf_size - 1) : 0;
         state->InitialTextA.resize(buf_len + 1);    // UTF-8. we use +1 to make sure that .Data is always pointing to at least an empty string.
-        memcpy(state->InitialTextA.Data, buf, buf_len + 1);
+        memcpy(state->InitialTextA.Data, buf, buf_len);
+        state->InitialTextA.Data[buf_len] = 0;
 
         // Start edition
         const char* buf_end = NULL;
@@ -4616,13 +4620,12 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     }
     else
     {
+        if (!is_displaying_hint)
+            buf_display_end = buf_display + (buf_display_from_state ? state->CurLenA : (buf_size > 0 ? strnlen(buf_display, buf_size - 1) : 0));
+
         // Render text only (no selection, no cursor)
         if (is_multiline)
-            text_size = ImVec2(inner_size.x, InputTextCalcTextLenAndLineCount(buf_display, &buf_display_end) * g.FontSize); // We don't need width
-        else if (!is_displaying_hint && g.ActiveId == id)
-            buf_display_end = buf_display + state->CurLenA;
-        else if (!is_displaying_hint)
-            buf_display_end = buf_display + strlen(buf_display);
+            text_size = ImVec2(inner_size.x, InputTextCalcLineCount(buf_display, buf_display_end) * g.FontSize); // We don't need width
 
         if (is_multiline || (buf_display_end - buf_display) < buf_display_max_length)
         {
