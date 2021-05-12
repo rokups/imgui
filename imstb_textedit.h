@@ -519,6 +519,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
 {
    StbTexteditRow r;
    int prev_start = 0;
+   int scan_len = 0;
    int z = STB_TEXTEDIT_STRINGLEN(str);
    int i=0, first;
 
@@ -538,12 +539,27 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
          find->height = 1;
          while (i < z) {
             STB_TEXTEDIT_LAYOUTROW(&r, str, i);
+
+            // [DEAR IMGUI]
+            // Do not advance if we reached last line without \n at the end because last line with \n creates a new 
+            // empty line.
+            if (i + r.num_chars >= z && STB_TEXTEDIT_GETCHAR(str, i + r.num_chars - 1) != '\n')
+               break;
             prev_start = i;
             i += r.num_chars;
          }
          find->first_char = i;
          find->length = 0;
          find->prev_first = prev_start;
+
+         // [DEAR IMGUI]
+         // Add missing x position scanning for end of string case.
+         scan_len = i - prev_start - 1;
+         if (z - i < scan_len)      // Scan ends at last character of shorter line to properly navigate up when no
+            scan_len = z - i;       // preferred x is set.
+         find->x = r.x0;
+         for (i=0; i < scan_len; ++i)
+            find->x += STB_TEXTEDIT_GETWIDTH(str, prev_start, i);
       }
       return;
    }
