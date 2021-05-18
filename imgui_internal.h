@@ -1003,14 +1003,14 @@ struct IMGUI_API ImGuiMenuColumns
     void        CalcNextTotalWidth(bool update_offsets);
 };
 
-struct IMGUI_API ImGuiLineInfo
+struct IMGUI_API ImGuiInputTextLineInfo
 {
-    int                     ByteOffset;             // Offset from the start of string in bytes.
-    int                     CodepointOffset;        // Offset from the start of string in utf-8 codepoints.
-    int                     ByteLen;                // Length of line in bytes, including \r\n.
-    int                     CodepointLen;           // Length of line in utf-8 codepoints, including \r\n.
+    int         ByteOffset;             // Offset from the start of string in bytes.
+    int         ByteLen;                // Length of line in bytes, including \r\n.
+    int         CodepointOffset;        // Offset from the start of string in UTF-8 codepoints.
+    int         CodepointLen;           // Length of line in UTF-8 codepoints, including \r\n.
 
-    ImGuiLineInfo() { ByteOffset = CodepointOffset = 0; ByteLen = CodepointLen = 0; }
+    ImGuiInputTextLineInfo() { memset(this, 0, sizeof(*this)); }
 };
 
 // Internal state of the currently focused/edited text input box
@@ -1021,7 +1021,7 @@ struct IMGUI_API ImGuiInputTextState
     int                     CurLenW, CurLenA;       // we need to maintain our buffer length in both UTF-8 and wchar format.
     ImVector<char>          TextA;                  // temporary UTF8 buffer for callbacks and other operations. this is not updated in every code-path! size=capacity.
     ImVector<char>          InitialTextA;           // backup of end-user buffer at the time of focus (in UTF-8, unaltered)
-    ImVector<ImGuiLineInfo> LineIndex;            // Map line number (vector index) to byte offset in char buffer (upper 4 bytes) + codepoint count from start of the string (lower 4 bytes).
+    ImVector<ImGuiInputTextLineInfo> LinesIndex;    // Map line number (vector index) to byte offset in char buffer (upper 4 bytes) + codepoint count from start of the string (lower 4 bytes).
     int                     BufCapacityA;           // end-user buffer capacity
     float                   ScrollX;                // horizontal scrolling/offset
     ImStb::STB_TexteditState Stb;                   // state for stb_textedit.h
@@ -1032,13 +1032,13 @@ struct IMGUI_API ImGuiInputTextState
     ImGuiInputTextFlags     Flags;                  // copy of InputText() flags
 
     ImGuiInputTextState()                   { memset(this, 0, sizeof(*this)); }
-    void        ClearText()                 { CurLenW = CurLenA = 0; TextA[0] = 0; LineIndex.clear(); CursorClamp(); }
-    void        ClearFreeMemory()           { LineIndex.clear(); TextA.clear(); InitialTextA.clear(); }
+    void        ClearText()                 { CurLenW = CurLenA = 0; TextA[0] = 0; LinesIndex.clear(); CursorClamp(); }
+    void        ClearFreeMemory()           { LinesIndex.clear(); TextA.clear(); InitialTextA.clear(); }
     int         GetUndoAvailCount() const   { return Stb.undostate.undo_point; }
     int         GetRedoAvailCount() const   { return STB_TEXTEDIT_UNDOSTATECOUNT - Stb.undostate.redo_point; }
     void        OnKeyPressed(int key);      // Cannot be inline because we call in code in stb_textedit.h implementation
     void        ReindexLines();             // Create line index.
-    ImGuiLineInfo* GetLineInfo(int pos) const;// Look up info in line index.
+    ImGuiInputTextLineInfo* GetLineInfo(int pos) const;// Look up info in line index.
 
     // Cursor & Selection
     void        CursorAnimReset()           { CursorAnim = -0.30f; }                                   // After a user-input the cursor stays on for a while without blinking
