@@ -3773,7 +3773,7 @@ static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const Im
 
     const int new_text_len_utf8 = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
     if (!is_resizable && (new_text_len_utf8 + obj->CurLenA + 1 > obj->BufCapacityA))
-        return false;
+        return false;   // FIXME-OPT: Pasting too much text is ignored completely. Could only ignore part that does not fit.
 
     // Grow internal buffer if needed
     if (new_text_len_utf8 + text_len + 1 > obj->TextA.Size)
@@ -4207,10 +4207,9 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             recycle_state = false;
 
         // Start edition
-        const char* buf_end = NULL;
         state->ID = id;
-        state->CurLenW = ImTextCountCharsFromUtf8(buf, buf + buf_size - 1, &buf_end);
-        state->CurLenA = (int)(buf_end - buf);      // We can't get the result from ImStrncpy() above because it is not UTF-8 aware. Here we'll cut off malformed UTF-8.
+        state->CurLenW = ImTextCountCharsFromUtf8(buf, buf + buf_size - 1);
+        state->CurLenA = buf_len;
         state->TextA.resize(state->CurLenA + 1);
         memcpy(state->TextA.Data, state->InitialTextA.Data, state->CurLenA);
         state->TextA[state->CurLenA] = 0;
@@ -4850,15 +4849,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     break;
                 if (rect_pos.y < clip_rect.y)
                 {
-                    //p = (const ImWchar*)wmemchr((const wchar_t*)p, '\n', text_selected_end - p);  // FIXME-OPT: Could use this when wchar_t are 16-bit
-                    //p = p ? p + 1 : text_selected_end;
-                    while (p < text_selected_end)
-                    {
-                        unsigned int c;
-                        p += ImTextCharFromUtf8(&c, p, text_selected_end);
-                        if (c == '\n')
-                            break;
-                    }
+                    p = strchr(p, '\n');    // p points to internal buffer which is guaranteed to be \0-terminated.
+                    p = p ? p + 1 : text_selected_end;
                 }
                 else
                 {
