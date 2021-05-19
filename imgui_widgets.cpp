@@ -3753,7 +3753,7 @@ static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
     // We maintain our buffer length in both UTF-8 and wchar formats
     int remove_bytes = 0;
     for (int i = 0; i < n; i++)
-        remove_bytes += ImTextCountUtf8BytesFromChar(dst, dst + data.BytesToEOL); // FIXME: ?????
+        remove_bytes += ImTextCountUtf8BytesFromChar(dst + remove_bytes, dst + data.BytesToEOL);
     obj->Edited = true;
     obj->CurLenA -= remove_bytes;
     obj->CurLenW -= n;
