@@ -3690,6 +3690,14 @@ static void    STB_TEXTEDIT_LAYOUTROW(StbTexteditRow* r, ImGuiInputTextState* ob
     r->num_chars = ImTextCountCharsFromUtf8(data.Text, data.Text + data.BytesToEOL);
 }
 
+static int    STB_TEXTEDIT_CHARTOBOL(ImGuiInputTextState* obj, int idx, int* line_num)
+{
+    ImGuiInputTextLineInfo* line_data = obj->GetLineInfo(idx);
+    if (line_num)
+        *line_num = obj->LinesIndex.index_from_ptr(line_data);
+    return line_data->CodepointOffset;
+}
+
 // When ImGuiInputTextFlags_Password is set, we don't want actions such as CTRL+Arrow to leak the fact that underlying data are blanks or separators.
 static bool is_separator(unsigned int c)                                        { return ImCharIsBlankW(c) || c==',' || c==';' || c=='(' || c==')' || c=='{' || c=='}' || c=='[' || c==']' || c=='|' || c=='\n' || c=='\r'; }
 static int  is_word_boundary_from_right(ImGuiInputTextState* obj, int idx)      { if (obj->Flags & ImGuiInputTextFlags_Password) return 0; return idx > 0 ? (is_separator(InputTextGetCharInfo(obj, idx - 1).Codepoint) && !is_separator(InputTextGetCharInfo(obj, idx).Codepoint)) : 1; }
