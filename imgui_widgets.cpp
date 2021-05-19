@@ -4150,7 +4150,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
     const bool init_changed_specs = (state != NULL && state->Stb.single_line != !is_multiline);
     const bool init_make_active = (user_clicked || user_scroll_finish || input_requested_by_nav || input_requested_by_tabbing);
-    const bool init_state = (init_make_active || user_scroll_active);
+    const bool init_state = (init_make_active || (user_scroll_active && state->TextA.empty()));
     if ((init_state && g.ActiveId != id) || init_changed_specs)
     {
         // Access state even if we don't own it yet.
@@ -4259,6 +4259,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     // Select the buffer to render.
     const bool buf_display_from_state = (render_cursor || render_selection || g.ActiveId == id) && !is_readonly && state;
     const bool is_displaying_hint = (hint != NULL && (buf_display_from_state ? state->TextA.Data : buf)[0] == 0);
+    IM_ASSERT(!buf_display_from_state || !state->TextA.empty());
 
     // Password pushes a temporary font with only a fallback glyph
     if (is_password && !is_displaying_hint)
@@ -4909,6 +4910,13 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
     if (value_changed && !(flags & ImGuiInputTextFlags_NoMarkEdited))
         MarkItemEdited(id);
+
+    // This data will be reinitialized next time widget activates.
+    if (clear_active_id)
+    {
+        state->TextA.resize(0);
+        state->InitialTextA.resize(0);
+    }
 
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags);
     if ((flags & ImGuiInputTextFlags_EnterReturnsTrue) != 0)
