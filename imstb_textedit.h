@@ -553,6 +553,19 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
    // search rows to find the one that straddles character n
    find->y = 0;
 
+   // [DEAR IMGUI]
+   // Efficient way to find target line and line before that. It avoid looping all lines, which is very very slow for 
+   // extremely large amount of text. However this code is not entirely correct as it operates under assumption that
+   // text has uniform distance between lines. Rich text would have to loop all the lines, calculating their heights.
+   // If we ever come to that, commented out version should be used instead. 
+   (void)single_line;
+   int line_num = 0;
+   i = STB_TEXTEDIT_CHARTOBOL(str, n, &line_num);
+   prev_start = i ? STB_TEXTEDIT_CHARTOBOL(str, i - 1, NULL) : 0;
+   find->y = line_num * r.baseline_y_delta;
+   STB_TEXTEDIT_LAYOUTROW(&r, str, i);
+
+   /*
    for(;;) {
       STB_TEXTEDIT_LAYOUTROW(&r, str, i);
       if (n < i + r.num_chars)
@@ -570,6 +583,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
       i += r.num_chars;
       find->y += r.baseline_y_delta;
    }
+   */
 
    find->first_char = first = i;
    find->length = r.num_chars;
