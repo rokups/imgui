@@ -521,9 +521,10 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
 {
    StbTexteditRow r;
    int prev_start = 0;
-   int z = STB_TEXTEDIT_STRINGLEN(str);
+   //int z = STB_TEXTEDIT_STRINGLEN(str);
    int i=0, first;
 
+   /*
    if (n == z) {
       // if it's at the end, then find the last line -- simpler than trying to
       // explicitly handle this case in the regular code
@@ -549,6 +550,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
       }
       return;
    }
+   */
 
    // search rows to find the one that straddles character n
    find->y = 0;
@@ -557,6 +559,15 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
       STB_TEXTEDIT_LAYOUTROW(&r, str, i);
       if (n < i + r.num_chars)
          break;
+
+      // [DEAR IMGUI]
+      // Implement cursor navigation from the last line. It also correctly handles cursor navigation from the end of 
+      // last line, unlike original implementation.
+      if (n == i + r.num_chars && STB_TEXTEDIT_GETCHAR(str, n - 1) != STB_TEXTEDIT_NEWLINE)
+         break;
+      if (r.num_chars == 0)
+         break;
+
       prev_start = i;
       i += r.num_chars;
       find->y += r.baseline_y_delta;
