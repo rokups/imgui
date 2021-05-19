@@ -127,7 +127,6 @@ static const ImU64          IM_U64_MAX = (2ULL * 9223372036854775807LL + 1);
 // For InputTextEx()
 static bool             InputTextFilterCharacter(unsigned int* p_char, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data, ImGuiInputSource input_source);
 static int              InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end);
-static ImVec2           InputTextCalcTextSizeA(const char* text_begin, const char* text_end, const char** remaining = NULL, bool stop_on_new_line = false);
 
 //-------------------------------------------------------------------------
 // [SECTION] Widgets: Text, etc.
@@ -3628,49 +3627,6 @@ static int InputTextCalcTextLenAndLineCount(const char* text_begin, const char**
     return line_count;
 }
 
-static ImVec2 InputTextCalcTextSizeA(const char* text_begin, const char* text_end, const char** remaining, bool stop_on_new_line)
-{
-    ImGuiContext& g = *GImGui;
-    ImFont* font = g.Font;
-    const float line_height = g.FontSize;
-    const float scale = line_height / font->FontSize;
-
-    ImVec2 text_size = ImVec2(0, 0);
-    float line_width = 0.0f;
-
-    const char* s = text_begin;
-    while (s < text_end)
-    {
-        unsigned int c;
-        s += ImTextCharFromUtf8(&c, s, text_end);
-        if (c == '\n')
-        {
-            text_size.x = ImMax(text_size.x, line_width);
-            text_size.y += line_height;
-            line_width = 0.0f;
-            if (stop_on_new_line)
-                break;
-            continue;
-        }
-        if (c == '\r')
-            continue;
-
-        const float char_width = font->GetCharAdvance((ImWchar)c) * scale;
-        line_width += char_width;
-    }
-
-    if (text_size.x < line_width)
-        text_size.x = line_width;
-
-    if (line_width > 0 || text_size.y == 0.0f)                        // whereas size.y will ignore the trailing \n
-        text_size.y += line_height;
-
-    if (remaining)
-        *remaining = s;
-
-    return text_size;
-}
-
 struct ImGuiInputTextCharInfo
 {
     char*           Text;                   // Pointer to character at requested index
@@ -4784,11 +4740,11 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             }
 
             // Calculate 2d position by finding the beginning of the line and measuring distance
-            cursor_offset.x = InputTextCalcTextSizeA(ImStrbolA(cursor_text_start, text_begin), cursor_text_start).x;
+            cursor_offset.x = CalcTextSize(ImStrbolA(cursor_text_start, text_begin), cursor_text_start).x;
             cursor_offset.y = (float)selection_start * g.FontSize;
             if (selection_end >= 0)
             {
-                selection_start_offset.x = InputTextCalcTextSizeA(ImStrbolA(cursor_text_end, text_begin), cursor_text_end).x;
+                selection_start_offset.x = CalcTextSize(ImStrbolA(cursor_text_end, text_begin), cursor_text_end).x;
                 selection_start_offset.y = (float)selection_end * g.FontSize;
             }
 
@@ -4847,20 +4803,20 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 if (rect_pos.y > clip_rect.w + g.FontSize)
                     break;
-                if (rect_pos.y < clip_rect.y)
+
+                // p points to internal buffer which is guaranteed to be \0-terminated.
+                const char* p_eol = strchr(p, '\n');
+                p_eol = p_eol ? p_eol + 1 : text_selected_end;
+                if (rect_pos.y >= clip_rect.y)
                 {
-                    p = strchr(p, '\n');    // p points to internal buffer which is guaranteed to be \0-terminated.
-                    p = p ? p + 1 : text_selected_end;
-                }
-                else
-                {
-                    ImVec2 rect_size = InputTextCalcTextSizeA(p, text_selected_end, &p, true);
+                    ImVec2 rect_size = CalcTextSize(p, ImMin(p_eol, text_selected_end));
                     if (rect_size.x <= 0.0f) rect_size.x = IM_FLOOR(g.Font->GetCharAdvance((ImWchar)' ') * 0.50f); // So we can see selected empty lines
                     ImRect rect(rect_pos + ImVec2(0.0f, bg_offy_up - g.FontSize), rect_pos + ImVec2(rect_size.x, bg_offy_dn));
                     rect.ClipWith(clip_rect);
                     if (rect.Overlaps(clip_rect))
                         draw_window->DrawList->AddRectFilled(rect.Min, rect.Max, bg_color);
                 }
+                p = p_eol;
                 rect_pos.x = draw_pos.x - draw_scroll.x;
                 rect_pos.y += g.FontSize;
             }
