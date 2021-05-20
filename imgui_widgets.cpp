@@ -3616,13 +3616,24 @@ bool ImGui::InputTextWithHint(const char* label, const char* hint, char* buf, si
 static int InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end)
 {
     int line_count = 0;
+
+    const char* text_end = (const char*)memchr(text_begin, 0, *out_text_end - text_begin);
+    if (text_end == NULL)
+        text_end = *out_text_end;
+
     const char* s = text_begin;
-    const char* text_end = *out_text_end;
-    for (char c = *s++; c && s < text_end; c = *s++) // We are only matching for \n so we can ignore UTF-8 decoding
-        if (c == '\n')
+    while (s < text_end)
+        if (const char* n = (const char*)memchr(s, '\n', text_end - s))
+        {
             line_count++;
-    s--;
-    if (s[0] != '\n' && s[0] != '\r')
+            s = n + 1;
+        }
+        else
+        {
+            s = text_end;
+        }
+
+    if (s == text_begin || (s[-1] != '\n' && s[-1] != '\r'))
         line_count++;
     *out_text_end = s;
     return line_count;
@@ -4866,7 +4877,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         else if (!is_displaying_hint && g.ActiveId == id)
             buf_display_end = buf_display + state->CurLenA;
         else if (!is_displaying_hint)
-            buf_display_end = buf_display + strlen(buf_display);
+            buf_display_end = buf_display + strnlen(buf_display, buf_size - 1);
 
         if (is_multiline || (buf_display_end - buf_display) < buf_display_max_length)
         {
