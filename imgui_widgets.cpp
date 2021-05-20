@@ -3617,7 +3617,8 @@ static int InputTextCalcTextLenAndLineCount(const char* text_begin, const char**
 {
     int line_count = 0;
     const char* s = text_begin;
-    while (char c = *s++) // We are only matching for \n so we can ignore UTF-8 decoding
+    const char* text_end = *out_text_end;
+    for (char c = *s++; c && s < text_end; c = *s++) // We are only matching for \n so we can ignore UTF-8 decoding
         if (c == '\n')
             line_count++;
     s--;
@@ -4703,7 +4704,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     // Note that we only use this limit on single-line InputText(), so a pathologically large line on a InputTextMultiline() would still crash.
     const int buf_display_max_length = 2 * 1024 * 1024;
     const char* buf_display = buf_display_from_state ? state->TextA.Data : buf; //-V595
-    const char* buf_display_end = NULL; // We have specialized paths below for setting the length
+    const char* buf_display_end = buf_display_from_state ? state->TextA.Data + state->CurLenA : buf + buf_size - 1; // We have specialized paths below for setting the length
     if (is_displaying_hint)
     {
         buf_display = hint;
