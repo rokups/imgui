@@ -121,12 +121,32 @@ static const ImU64          IM_U64_MAX = (2ULL * 9223372036854775807LL + 1);
 #endif
 
 //-------------------------------------------------------------------------
+// [SECTION] Helper Functions
+//-------------------------------------------------------------------------
+
+static inline int ImChrcntA(const char* text_begin, const char* text_end, char c)
+{
+    int count = 0;
+    for (const char* p = text_begin; p < text_end;)
+    {
+        if (void* cp = memchr((void*)p, c, text_end - p))
+        {
+            count++;
+            p = (const char*)cp + 1;
+        }
+        else
+        {
+            break;
+        }
+    }
+    return count;
+}
+//-------------------------------------------------------------------------
 // [SECTION] Forward Declarations
 //-------------------------------------------------------------------------
 
 // For InputTextEx()
 static bool             InputTextFilterCharacter(unsigned int* p_char, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data, ImGuiInputSource input_source);
-static int              InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end);
 
 //-------------------------------------------------------------------------
 // [SECTION] Widgets: Text, etc.
@@ -4899,11 +4919,20 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     {
         // Render text only (no selection, no cursor)
         if (is_multiline)
-            text_size = ImVec2(inner_size.x, (float)InputTextCalcTextLenAndLineCount(buf_display, &buf_display_end) * g.FontSize); // We don't need width
+        {
+            if (const char* null_byte = (const char*)memchr(buf_display, 0, buf_display_end - buf_display))
+                buf_display_end = null_byte;
+            int line_count = ImChrcntA(buf_display, buf_display_end, '\n') + 1;
+            text_size = ImVec2(inner_size.x, (float)line_count * g.FontSize); // We don't need width
+        }
         else if (!is_displaying_hint && g.ActiveId == id)
+        {
             buf_display_end = buf_display + state->CurLenA;
+        }
         else if (!is_displaying_hint)
+        {
             buf_display_end = buf_display + strnlen(buf_display, buf_size - 1);
+        }
 
         if (is_multiline || (buf_display_end - buf_display) < buf_display_max_length)
         {
