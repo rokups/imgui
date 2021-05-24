@@ -4847,7 +4847,33 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         if (is_multiline || (buf_display_end - buf_display) < buf_display_max_length)
         {
             ImU32 col = GetColorU32(is_displaying_hint ? ImGuiCol_TextDisabled : ImGuiCol_Text);
-            draw_window->DrawList->AddText(g.Font, g.FontSize, draw_pos - draw_scroll, col, buf_display, buf_display_end, 0.0f, is_multiline ? NULL : &clip_rect);
+            const char* buf_trimmed = buf_display;
+            const char* buf_trimmed_end = buf_display_end;
+            ImVec2 text_pos = draw_pos;
+            if (is_multiline)
+            {
+                // Perform clipping using line index. Text is rendered only within frame rect.
+                text_pos = frame_bb.Min + style.FramePadding;
+                int first_line = ImFloor((clip_rect.y + style.FramePadding.y - draw_pos.y) / g.FontSize);
+                int last_line = first_line + ImCeil((clip_rect.w - clip_rect.y) / g.FontSize);
+
+                // Include one line before a first line, to correctly render that line which is partially scrolled out of view.
+                if (first_line > 0)
+                {
+                    first_line -= 1;
+                    text_pos.y -= g.FontSize;
+                }
+
+                if (first_line < state->LinesIndex.Size)
+                {
+                    buf_trimmed = state->TextA.Data + state->LinesIndex[first_line].ByteOffset;
+                    if (last_line < state->LinesIndex.Size)
+                        buf_trimmed_end = state->TextA.Data + state->LinesIndex[last_line].ByteOffset;
+                    else
+                        buf_trimmed_end = state->TextA.Data + state->CurLenA;
+                }
+            }
+            draw_window->DrawList->AddText(g.Font, g.FontSize, text_pos - draw_scroll, col, buf_trimmed, buf_trimmed_end, 0.0f, is_multiline ? NULL : &clip_rect);
         }
 
         // Draw blinking cursor
