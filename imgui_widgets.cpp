@@ -141,6 +141,29 @@ static inline int ImChrcntA(const char* text_begin, const char* text_end, char c
     }
     return count;
 }
+
+static inline int ImChrcntW(const ImWchar* text_begin, const ImWchar* text_end, ImWchar c)
+{
+    int count = 0;
+    for (const ImWchar* p = text_begin; p < text_end;)
+    {
+        if (void* cp = memchr((void*)p, c, (text_end - p) * sizeof(ImWchar)))
+        {
+            // memchr() despite taking integer parameter, performs search for 8 bit characters, but we use it anyway
+            // because it is very fast. To work around this limitation we ensure located pointer is a multiple of
+            // sizeof(ImWchar) and contains searched character.
+            if ((((size_t)cp - (size_t)text_begin) % sizeof(ImWchar)) == 0 && *(ImWchar*)cp == c)
+                count++;
+            p = (const ImWchar*)cp + 1;
+        }
+        else
+        {
+            break;
+        }
+    }
+    return count;
+}
+
 //-------------------------------------------------------------------------
 // [SECTION] Forward Declarations
 //-------------------------------------------------------------------------
@@ -3633,32 +3656,6 @@ bool ImGui::InputTextWithHint(const char* label, const char* hint, char* buf, si
     return InputTextEx(label, hint, buf, (int)buf_size, ImVec2(0, 0), flags, callback, user_data);
 }
 
-static int InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end)
-{
-    int line_count = 0;
-
-    const char* text_end = (const char*)memchr(text_begin, 0, *out_text_end - text_begin);
-    if (text_end == NULL)
-        text_end = *out_text_end;
-
-    const char* s = text_begin;
-    while (s < text_end)
-        if (const char* n = (const char*)memchr(s, '\n', text_end - s))
-        {
-            line_count++;
-            s = n + 1;
-        }
-        else
-        {
-            s = text_end;
-        }
-
-    if (s == text_begin || (s[-1] != '\n' && s[-1] != '\r'))
-        line_count++;
-    *out_text_end = s;
-    return line_count;
-}
-
 struct ImGuiInputTextCharInfo
 {
     char*           Text;                   // Pointer to character at requested index
@@ -3692,6 +3689,137 @@ static ImGuiInputTextCharInfo InputTextGetCharInfo(const ImGuiInputTextState* ob
     data.BytesToEOL = (int)(line_end - s);
     data.LineNum = obj->LinesIndex.index_from_ptr(line_data);
     return data;
+}
+
+// Create line index with information about line start and length.
+static void InputTextReindexLines(ImGuiInputTextState* obj)
+{
+    IM_ASSERT(obj->TextA.Size > obj->CurLenA);                  // Always includes at least one byte (\0).
+    obj->LinesIndex.resize(0);
+    int char_count = 0;
+    const char* text_begin = obj->TextA.Data;
+    const char* text_end = &text_begin[obj->CurLenA + 1];
+    const char* lf = NULL;
+    const char* line_begin = text_begin;
+
+    // LineIndex.Size == count('\n') + 1.
+    do
+    {
+        // TextA points to internal buffer therefore this won't read past end of user buffer if it was unterminated.
+        lf = strchr(line_begin, '\n');
+        const char* eol = lf == NULL ? text_end : lf + 1;       // +1 to also include \n.
+        ImGuiInputTextLineInfo info;
+        info.ByteOffset = (int)(line_begin - text_begin);
+        info.ByteLen = (int)(eol - line_begin);
+        info.CodepointOffset = char_count;
+        info.CodepointLen = ImTextCountCharsFromUtf8(line_begin, eol);
+        obj->LinesIndex.push_back(info);
+        char_count += info.CodepointLen;
+        line_begin = eol;
+    } while (lf != NULL);
+}
+
+// Update line index by adding or removing specified number of lines and updating affected index entries.
+static void InputTextReindexLinesRange(ImGuiInputTextState* obj, int line_start, int lines_added, int added_bytes, int added_chars)
+{
+    int line_end;
+    if (lines_added < 0)
+    {
+        // Lines got deleted. Delete line index items corresponding to deleted lines.
+        ImGuiInputTextLineInfo* erase_first = &obj->LinesIndex.Data[line_start + 1];
+        ImGuiInputTextLineInfo* erase_last = &obj->LinesIndex.Data[line_start + 1 + ImAbs(lines_added)];
+        if (erase_first < erase_last)
+            obj->LinesIndex.erase(erase_first, erase_last);
+
+        // Only current line length changed, rescan that single line.
+        line_end = line_start + 1;
+    }
+    else
+    {
+        // Line was modified in-place, possibly with new lines added.
+        if (lines_added > 0)
+        {
+            obj->LinesIndex.resize(obj->LinesIndex.Size + lines_added);
+            ImGuiInputTextLineInfo* source = &obj->LinesIndex.Data[line_start + 1];
+            int move_count = obj->LinesIndex.Size - line_start - 1 - lines_added;
+            memmove(source + lines_added, source, move_count * sizeof(ImGuiInputTextLineInfo));
+        }
+
+        // Rescan current line and all newly added lines if any.
+        line_end = line_start + lines_added + 1;
+    }
+
+    // Reindex a limited number of lines in the middle of text.
+    const char* text_begin = obj->TextA.Data;
+    const char* text_end = text_begin + obj->TextA.Size;
+    for (int i = line_start; i < line_end; i++)
+    {
+        ImGuiInputTextLineInfo* line_data = &obj->LinesIndex.Data[i];
+        if (i > 0)
+        {
+            ImGuiInputTextLineInfo* line_data_prev = &line_data[-1];
+            line_data->CodepointOffset = line_data_prev->CodepointOffset + line_data_prev->CodepointLen;
+            line_data->ByteOffset = line_data_prev->ByteOffset + line_data_prev->ByteLen;
+        }
+
+        // TextA points to internal buffer therefore this won't read past end of user buffer if it was unterminated.
+        const char* line_begin = obj->TextA.Data + line_data->ByteOffset;
+        const char* lf = strchr(line_begin, '\n');
+        const char* eol = lf == NULL ? text_end : lf + 1;  // +1 to also include \n.
+        line_data->ByteLen = (int)(eol - line_begin);
+        line_data->CodepointLen = ImTextCountCharsFromUtf8(line_begin, eol);
+        line_begin = eol;
+    }
+
+    // Offset subsequent line data.
+    ImGuiInputTextLineInfo* line_data = obj->LinesIndex.Data + line_end;
+    ImGuiInputTextLineInfo* line_data_end = obj->LinesIndex.Data + obj->LinesIndex.Size;
+    while (line_data < line_data_end)
+    {
+        line_data->CodepointOffset += added_chars;
+        line_data->ByteOffset += added_bytes;
+        line_data++;
+    }
+}
+
+static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
+{
+    ImGuiContext& g = *GImGui;
+    char* buf = g.InputTextState.TextA.Data;
+    char* dst = buf + pos;
+    const char* src = buf + pos + bytes_count;
+    int remove_lines = ImChrcntA(dst, src, '\n');
+    int move_len = strlen(src);
+    memmove(dst, src, move_len + 1);
+
+    // Update line index. Only scan current line and shift subsequent line offsets back.
+    ImGuiInputTextState* obj = &g.InputTextState;
+    ImGuiInputTextLineInfo* data = obj->GetLineInfo(pos, false);
+    int line_num = obj->LinesIndex.index_from_ptr(data);
+    InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
+}
+
+// Insert a specified number of bytes into TextA buffer at specified position. Caller will fill them.
+static char* InputTextInsertTextMakeSpace(int pos, int bytes_count)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiInputTextState* obj = &g.InputTextState;
+    const bool is_resizable = (obj->Flags & ImGuiInputTextFlags_CallbackResize) != 0;
+    const int text_len = obj->CurLenA;
+    IM_ASSERT(pos <= obj->CurLenA);
+
+    if (!is_resizable && (bytes_count + obj->CurLenA + 1 > obj->BufCapacityA))
+        return NULL;   // FIXME-OPT: Pasting too much text is ignored completely. Could only ignore part that does not fit.
+
+    // Grow internal buffer if needed
+    if (bytes_count + text_len + 1 > obj->TextA.Size)
+        obj->TextA.resize(text_len + bytes_count + 1);
+
+    char* text = obj->TextA.Data + pos;
+    if (pos != obj->CurLenA)
+        memmove(text + bytes_count, text, text_len - pos);
+    text[text_len - pos + bytes_count] = 0;
+    return text;
 }
 
 // Wrapper for stb_textedit.h to edit text (our wrapper is for: statically sized buffer, single-line, wchar characters. InputText converts between UTF-8 and wchar)
@@ -3743,52 +3871,43 @@ static int  STB_TEXTEDIT_MOVEWORDRIGHT_IMPL(ImGuiInputTextState* obj, int idx)  
 
 static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
 {
+    // Delete text from TextA.
     ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, pos);
     char* dst = data.Text;
-
-    // We maintain our buffer length in both UTF-8 and wchar formats
+    const char* dst_end = obj->TextA.Data + obj->CurLenA;
     int remove_bytes = 0;
     for (int i = 0; i < n; i++)
-        remove_bytes += ImTextCountUtf8BytesFromChar(dst + remove_bytes, dst + data.BytesToEOL);
+        remove_bytes += ImTextCountUtf8BytesFromChar(dst + remove_bytes, dst_end);
+    InputTextDeleteText(dst - obj->TextA.Data, remove_bytes, n);
+
+    // Update state fields.
     obj->Edited = true;
     obj->CurLenA -= remove_bytes;
     obj->CurLenW -= n;
-
-    // Offset remaining text (FIXME-OPT: Use memmove)
-    const char* src = data.Text + remove_bytes;
-    while (char c = *src++)
-        *dst++ = c;
-    *dst = '\0';
 }
 
-static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const ImWchar* new_text, int new_text_len)
+static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const STB_TEXTEDIT_CHARTYPE* new_text, int new_text_len)
 {
-    const bool is_resizable = (obj->Flags & ImGuiInputTextFlags_CallbackResize) != 0;
-    const int text_len = obj->CurLenA;
-    IM_ASSERT(pos <= obj->CurLenW);
-
-    const int new_text_len_utf8 = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
-    if (!is_resizable && (new_text_len_utf8 + obj->CurLenA + 1 > obj->BufCapacityA))
-        return false;   // FIXME-OPT: Pasting too much text is ignored completely. Could only ignore part that does not fit.
-
-    // Grow internal buffer if needed
-    if (new_text_len_utf8 + text_len + 1 > obj->TextA.Size)
-        obj->TextA.resize(text_len + ImClamp(new_text_len_utf8 * 4, 32, ImMax(256, new_text_len_utf8)) + 1);
-
+    // Insert new text.
     ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, pos);
-    char* text = data.Text;
-    if (pos != obj->CurLenW)
-        memmove(text + new_text_len_utf8, text, obj->TextA.Data + text_len - text);
+    const int bytes_count = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
+    char* dest = InputTextInsertTextMakeSpace(data.Text - obj->TextA.Data, bytes_count);
+    if (dest == NULL)
+        return false;
 
     // FIXME-OPT: ImTextStrToUtf8 insists on 0-terminating buffer. Could rework ImTextStrToUtf8 to not do this?
-    char c_bkp = *(text + new_text_len_utf8);
-    ImTextStrToUtf8(text, new_text_len_utf8 + 1, new_text, new_text + new_text_len);
-    *(text + new_text_len_utf8) = c_bkp;
+    char c_bkp = dest[bytes_count];
+    ImTextStrToUtf8(dest, bytes_count + 1, new_text, new_text + new_text_len);
+    dest[bytes_count] = c_bkp;
 
+    // Update line index.
+    int new_lines = ImChrcntW(new_text, new_text + new_text_len, (ImWchar)'\n');
+    InputTextReindexLinesRange(obj, data.LineNum, new_lines, bytes_count, new_text_len);
+
+    // Update state fields.
     obj->Edited = true;
     obj->CurLenW += new_text_len;
-    obj->CurLenA += new_text_len_utf8;
-    obj->TextA[obj->CurLenA] = '\0';
+    obj->CurLenA += bytes_count;
 
     return true;
 }
@@ -3841,35 +3960,9 @@ void ImGuiInputTextState::OnKeyPressed(int key)
     CursorAnimReset();
 }
 
-void ImGuiInputTextState::ReindexLines()
-{
-    IM_ASSERT(TextA.Size > CurLenA);                    // Always includes at least one byte (\0).
-    LinesIndex.resize(0);
-    int char_count = 0;
-    const char* text_begin = TextA.Data;
-    const char* text_end = &text_begin[CurLenA];
-    const char* eol = NULL;
-    const char* line_begin = text_begin;
-
-    // LineIndex.Size == count('\n') + 1.
-    do
-    {
-        // TextA points to internal buffer therefore this won't read past end of user buffer if it was unterminated.
-        eol = strchr(line_begin, '\n');
-        const char* line_end = eol == NULL ? text_end : eol + 1;  // +1 to also include \n.
-        ImGuiInputTextLineInfo info;
-        info.ByteOffset = (int)(line_begin - text_begin);
-        info.ByteLen = (int)(line_end - line_begin);
-        info.CodepointOffset = char_count;
-        info.CodepointLen = ImTextCountCharsFromUtf8(line_begin, line_end);
-        LinesIndex.push_back(info);
-        char_count += info.CodepointLen;
-        line_begin = line_end;
-    } while (eol != NULL);
-}
 
 // Same algorithm as LowerBound() in imgui.cpp
-ImGuiInputTextLineInfo* ImGuiInputTextState::GetLineInfo(int pos) const
+ImGuiInputTextLineInfo* ImGuiInputTextState::GetLineInfo(int pos, bool char_pos) const
 {
     if (LinesIndex.empty())
         return NULL;
@@ -3880,7 +3973,9 @@ ImGuiInputTextLineInfo* ImGuiInputTextState::GetLineInfo(int pos) const
     {
         int count2 = count >> 1;
         ImGuiInputTextLineInfo* mid = first + count2;
-        if (mid->CodepointOffset + mid->CodepointLen <= pos)
+
+        bool match = char_pos ? mid->CodepointOffset + mid->CodepointLen <= pos : mid->ByteOffset + mid->ByteLen <= pos;
+        if (match)
         {
             first = ++mid;
             count -= count2 + 1;
@@ -3904,12 +3999,10 @@ ImGuiInputTextCallbackData::ImGuiInputTextCallbackData()
 void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 {
     IM_ASSERT(pos + bytes_count <= BufTextLen);
-    char* dst = Buf + pos;
-    const char* src = Buf + pos + bytes_count;
-    while (char c = *src++)
-        *dst++ = c;
-    *dst = '\0';
+    int char_count = ImTextCountCharsFromUtf8(Buf + pos, Buf + pos + bytes_count);
+    InputTextDeleteText(pos, bytes_count, char_count);
 
+    // Update callback data.
     if (CursorPos >= pos + bytes_count)
         CursorPos -= bytes_count;
     else if (CursorPos >= pos)
@@ -3921,29 +4014,27 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 
 void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, const char* new_text_end)
 {
-    const bool is_resizable = (Flags & ImGuiInputTextFlags_CallbackResize) != 0;
+    ImGuiContext& g = *GImGui;
+    ImGuiInputTextState* obj = &g.InputTextState;
+    IM_ASSERT(Buf == obj->TextA.Data);
+
+    // Insert text into TextA buffer.
     const int new_text_len = new_text_end ? (int)(new_text_end - new_text) : (int)strlen(new_text);
-    if (new_text_len + BufTextLen >= BufSize)
-    {
-        if (!is_resizable)
-            return;
+    char* dest = InputTextInsertTextMakeSpace(pos, new_text_len);
+    if (dest == NULL)
+        return;
+    memcpy(dest, new_text, (size_t)new_text_len * sizeof(char));
 
-        // Contrary to STB_TEXTEDIT_INSERTCHARS() this is working in the UTF8 buffer, hence the mildly similar code (until we remove the U16 buffer altogether!)
-        ImGuiContext& g = *GImGui;
-        ImGuiInputTextState* edit_state = &g.InputTextState;
-        IM_ASSERT(edit_state->ID != 0 && g.ActiveId == edit_state->ID);
-        IM_ASSERT(Buf == edit_state->TextA.Data);
-        int new_buf_size = BufTextLen + ImClamp(new_text_len * 4, 32, ImMax(256, new_text_len)) + 1;
-        edit_state->TextA.reserve(new_buf_size + 1);
-        Buf = edit_state->TextA.Data;
-        BufSize = edit_state->BufCapacityA = new_buf_size;
-    }
+    // Update line index.
+    ImGuiInputTextLineInfo* data = g.InputTextState.GetLineInfo(pos, false);
+    int line_num = g.InputTextState.LinesIndex.index_from_ptr(data);
+    int char_count = ImTextCountCharsFromUtf8(new_text, new_text_end);
+    int new_lines = ImChrcntA(new_text, new_text_end, '\n');
+    InputTextReindexLinesRange(&g.InputTextState, line_num, new_lines, new_text_len, char_count);
 
-    if (BufTextLen != pos)
-        memmove(Buf + pos + new_text_len, Buf + pos, (size_t)(BufTextLen - pos));
-    memcpy(Buf + pos, new_text, (size_t)new_text_len * sizeof(char));
-    Buf[BufTextLen + new_text_len] = '\0';
-
+    // Update callback data.
+    Buf = obj->TextA.Data;
+    BufSize = obj->BufCapacityA = obj->TextA.Size - 1;
     if (CursorPos >= pos)
         CursorPos += new_text_len;
     SelectionStart = SelectionEnd = CursorPos;
@@ -4209,7 +4300,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         state->TextA.resize(state->CurLenA + 1);
         memcpy(state->TextA.Data, state->InitialTextA.Data, state->CurLenA);
         state->TextA[state->CurLenA] = 0;
-        state->ReindexLines();
+        InputTextReindexLines(state);
 
         if (recycle_state)
         {
@@ -4712,7 +4803,6 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // If the underlying buffer resize was denied or not carried to the next frame, apply_new_text_length+1 may be >= buf_size.
         ImStrncpy(buf, apply_new_text, ImMin(apply_new_text_length + 1, buf_size));
         value_changed = true;
-        state->ReindexLines(); // FIXME-OPT: A little bit lazy but simple and not error-prone (vs maintaining the index ourselves in INSERT/DELETE chars operations)
     }
 
     // Release active ID at the end of the function (so e.g. pressing Return still does a final application of the value)
