@@ -3648,7 +3648,7 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
             continue;
 
         float char_width = glyph->AdvanceX * scale;
-        if (glyph->Visible)
+        if (glyph->Visible && x >= clip_rect.x)
         {
             // We don't do a second finer clipping test on the Y axis as we've already skipped anything before clip_rect.y and exit once we pass clip_rect.w
             float x1 = x + glyph->X0 * scale;
@@ -3711,6 +3711,20 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col
             }
         }
         x += char_width;
+
+        // Skip rest of the line when it is outside of clipping rect.
+        if (x > clip_rect.z)
+        {
+            x = pos.x;
+            y += line_height;
+            if (y > clip_rect.w)
+                break; // break out of main loop
+
+            if (const void* lf = memchr(s, '\n', text_end - s))
+                s = (const char*)lf + 1;
+            else
+                break;  // Next line does not exist.
+        }
     }
 
     // Give back unused vertices (clipped ones, blanks) ~ this is essentially a PrimUnreserve() action.
