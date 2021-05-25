@@ -3668,26 +3668,38 @@ struct ImGuiInputTextCharInfo
 };
 
 // Seek UTF-8 buffer to specified index and return information about destination codepoint.
-static ImGuiInputTextCharInfo InputTextGetCharInfo(const ImGuiInputTextState* obj, int idx)
+static ImGuiInputTextCharInfo InputTextGetCharInfo(ImGuiInputTextState* obj, int idx)
 {
     // Find line in our index
     ImGuiInputTextLineInfo* line_data = obj->GetLineInfo(idx);
     IM_ASSERT(line_data != NULL);
     char* line_start = obj->TextA.Data + line_data->ByteOffset;
     char* line_end = line_start + line_data->ByteLen;
+    int current_line = obj->LinesIndex.index_from_ptr(line_data);
 
-    // Advance to seek characters
-    char* s = line_start;
-    unsigned int c;
-    for (int n = idx - line_data->CodepointOffset; n > 0; n--)
-        s += ImTextCharFromUtf8(&c, s, line_end);
+    // Index current line so repeated lookups are faster in linear character queries by stb_textedit.
+    if (obj->IndexedLine != current_line)
+    {
+        unsigned int c;
+        const char* s = line_start;
+        obj->IndexedLine = current_line;
+        obj->LineOffsets.resize(0);
+        while (s < line_end)
+        {
+            obj->LineOffsets.push_back((int)(s - line_start));
+            s += ImTextCharFromUtf8(&c, s, line_end);
+        }
+    }
+    int line_codepoint_index = idx - line_data->CodepointOffset;
+    IM_ASSERT(line_codepoint_index < obj->LineOffsets.Size);
 
     // Decode character pointed by idx and assemble return values
+    char* s = line_start + obj->LineOffsets.Data[line_codepoint_index];
     ImGuiInputTextCharInfo data;
     data.Text = s;
-    data.CodepointBytes = ImTextCharFromUtf8(&data.Codepoint, s, line_end + 1);
+    data.CodepointBytes = ImTextCharFromUtf8(&data.Codepoint, s, line_end);
     data.BytesToEOL = (int)(line_end - s);
-    data.LineNum = obj->LinesIndex.index_from_ptr(line_data);
+    data.LineNum = current_line;
     return data;
 }
 
@@ -3797,6 +3809,7 @@ static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
     ImGuiInputTextLineInfo* data = obj->GetLineInfo(pos, false);
     int line_num = obj->LinesIndex.index_from_ptr(data);
     InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
+    obj->IndexedLine = -1;
 }
 
 // Insert a specified number of bytes into TextA buffer at specified position. Caller will fill them.
@@ -3819,6 +3832,7 @@ static char* InputTextInsertTextMakeSpace(int pos, int bytes_count)
     if (pos != obj->CurLenA)
         memmove(text + bytes_count, text, text_len - pos);
     text[text_len - pos + bytes_count] = 0;
+    obj->IndexedLine = -1;
     return text;
 }
 
@@ -3827,7 +3841,7 @@ namespace ImStb
 {
 
 static int     STB_TEXTEDIT_STRINGLEN(const ImGuiInputTextState* obj)           { return obj->CurLenW; }
-static ImWchar STB_TEXTEDIT_GETCHAR(const ImGuiInputTextState* obj, int idx)    { ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, idx); return (ImWchar)data.Codepoint; }
+static ImWchar STB_TEXTEDIT_GETCHAR(ImGuiInputTextState* obj, int idx)    { ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, idx); return (ImWchar)data.Codepoint; }
 static float   STB_TEXTEDIT_GETWIDTH(ImGuiInputTextState* obj, int line_start_idx, int char_idx)
 {
     ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, line_start_idx + char_idx);
@@ -4300,6 +4314,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         state->TextA.resize(state->CurLenA + 1);
         memcpy(state->TextA.Data, state->InitialTextA.Data, state->CurLenA);
         state->TextA[state->CurLenA] = 0;
+        state->IndexedLine = -1;
         InputTextReindexLines(state);
 
         if (recycle_state)
