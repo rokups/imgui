@@ -18,6 +18,7 @@
 
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
+//  2021-06-02: Inputs: Fixed lack of mouse wheel acceleration on OS that support it.
 //  2021-06-01: Inputs: Fixed inverted horizontal mouse wheel axis. (#4019)
 //  2021-03-22: Rework global mouse pos availability check listing supported platforms explicitly, effectively fixing mouse access on Raspberry Pi. (#2837, #3950)
 //  2020-05-25: Misc: Report a zero display-size when window is minimized, to be consistent with other backends.
@@ -93,10 +94,8 @@ bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event* event)
     {
     case SDL_MOUSEWHEEL:
         {
-            if (event->wheel.x > 0) io.MouseWheelH -= 1;
-            if (event->wheel.x < 0) io.MouseWheelH += 1;
-            if (event->wheel.y > 0) io.MouseWheel += 1;
-            if (event->wheel.y < 0) io.MouseWheel -= 1;
+            io.MouseWheelH -= event->wheel.x;
+            io.MouseWheel += event->wheel.y;
             return true;
         }
     case SDL_MOUSEBUTTONDOWN:

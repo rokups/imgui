@@ -43,6 +43,7 @@ Other Changes:
   implying that the file is required.
 - Backends: OpenGL3: Handle GL_CLIP_ORIGIN on <4.5 contexts if "GL_ARB_clip_control" extension is detected. (#4170, #3998)
 - Backends: SDL, Win32: Fixed inverted horizontal mouse wheel axis. (#4019)
+- Backends: SDL: Fixed lack of mouse wheel acceleration on OS that support it.
 
 
 -----------------------------------------------------------------------
