@@ -113,6 +113,7 @@ Other Changes:
   multiple contexts. (#5203, #5221, #4141) [@noisewuwei]
 - Examples: Emscripten+WebGPU: Fix building for latest WebGPU specs. (#3632)
 - Examples: OSX+Metal, OSX+OpenGL: Removed now-unnecessary calls to ImGui_ImplOSX_HandleEvent(). (#4821)
+- Backends: SDL, Win32: Fixed inverted horizontal mouse wheel axis. (#4019)
 
 
 -----------------------------------------------------------------------

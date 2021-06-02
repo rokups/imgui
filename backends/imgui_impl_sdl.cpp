@@ -18,6 +18,7 @@
 
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
+//  2022-05-05: Inputs: Fixed inverted horizontal mouse wheel axis. (#4019)
 //  2022-03-22: Inputs: Fix mouse position issues when dragging outside of boundaries. SDL_CaptureMouse() erroneously still gives out LEAVE events when hovering OS decorations.
 //  2022-03-22: Inputs: Added support for extra mouse buttons (SDL_BUTTON_X1/SDL_BUTTON_X2).
 //  2022-02-04: Added SDL_Renderer* parameter to ImGui_ImplSDL2_InitForSDLRenderer(), so we can use SDL_GetRendererOutputSize() instead of SDL_GL_GetDrawableSize() when bound to a SDL_Renderer.
@@ -77,6 +78,7 @@
 #endif
 #define SDL_HAS_MOUSE_FOCUS_CLICKTHROUGH    SDL_VERSION_ATLEAST(2,0,5)
 #define SDL_HAS_VULKAN                      SDL_VERSION_ATLEAST(2,0,6)
+#define SDL_HAS_X11_HORIZONTAL_SCROLL_FIX   SDL_VERSION_ATLEAST(2,0,17)
 
 // SDL Data
 struct ImGui_ImplSDL2_Data
@@ -253,7 +255,13 @@ bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event* event)
     {
         case SDL_MOUSEMOTION:
         {
-            io.AddMousePosEvent((float)event->motion.x, (float)event->motion.y);
+            // SDL prior to 2.0.17 produced inverted horizontal scroll wheel values when running on X11.
+#if SDL_HAS_X11_HORIZONTAL_SCROLL_FIX
+            const int horizontal_axis_mul = 1;
+#else
+            static const int horizontal_axis_mul = strncmp(SDL_GetCurrentVideoDriver(), "x11", 3) == 0 ? -1 : +1;
+#endif
+            io.AddMousePosEvent((float)(event->motion.x * horizontal_axis_mul), (float)event->motion.y);
             return true;
         }
         case SDL_MOUSEWHEEL:
