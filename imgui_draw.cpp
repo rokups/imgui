@@ -490,12 +490,12 @@ void ImDrawList::AddCallback(ImDrawCallback callback, void* callback_data)
 #define ImDrawCmd_HeaderSize                        (IM_OFFSETOF(ImDrawCmd, VtxOffset) + sizeof(unsigned int))
 #define ImDrawCmd_HeaderCompare(CMD_LHS, CMD_RHS)   (memcmp(CMD_LHS, CMD_RHS, ImDrawCmd_HeaderSize))    // Compare ClipRect, TextureId, VtxOffset
 #define ImDrawCmd_HeaderCopy(CMD_DST, CMD_SRC)      (memcpy(CMD_DST, CMD_SRC, ImDrawCmd_HeaderSize))    // Copy ClipRect, TextureId, VtxOffset
-#define ImRect_AddPoint(bb, pos)          \
-    do {                                  \
-        if (bb.x > pos.x) bb.x = pos.x;   \
-        if (bb.y > pos.y) bb.y = pos.y;   \
-        if (bb.z < pos.x) bb.z = pos.x;   \
-        if (bb.w < pos.y) bb.w = pos.y;   \
+#define ImRect_AddPoint(bb, pos)                \
+    do {                                        \
+        if ((bb).x > (pos).x) (bb).x = (pos).x; \
+        if ((bb).y > (pos).y) (bb).y = (pos).y; \
+        if ((bb).z < (pos).x) (bb).z = (pos).x; \
+        if ((bb).w < (pos).y) (bb).w = (pos).y; \
     } while (false)
 
 // Our scheme may appears a bit unusual, basically we want the most-common calls AddLine AddRect etc. to not have to perform any check so we always have a command ready in the stack.
@@ -730,16 +730,17 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
 
     if ((flags & ImDrawFlags_NoAddToBoundingRect) == 0)
     {
-        float v;
-        float half_thickness = thickness * 0.5f;
+        ImVec4 local_bb(+FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX);
         ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
+        const float half_thickness = thickness * 0.5f;
         for (const ImVec2* p = points, *end = &points[points_count]; p < end; p++)
-        {
-            v = p->x - half_thickness; if (bb.x > v) bb.x = v;
-            v = p->x + half_thickness; if (bb.z < v) bb.z = v;
-            v = p->y - half_thickness; if (bb.y > v) bb.y = v;
-            v = p->y + half_thickness; if (bb.w < v) bb.w = v;
-        }
+            ImRect_AddPoint(local_bb, *p);
+        local_bb.x -= half_thickness;
+        local_bb.z += half_thickness;
+        local_bb.y -= half_thickness;
+        local_bb.w += half_thickness;
+        ImRect_AddPoint(bb, ImVec2(local_bb.x, local_bb.y));
+        ImRect_AddPoint(bb, ImVec2(local_bb.z, local_bb.w));
     }
 
     if (Flags & ImDrawListFlags_AntiAliasedLines)
@@ -997,9 +998,12 @@ void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_coun
 
     if ((flags & ImDrawFlags_NoAddToBoundingRect) == 0)
     {
+        ImVec4 local_bb(+FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX);
         ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
         for (const ImVec2* p = points, *end = &points[points_count]; p < end; p++)
-            ImRect_AddPoint(bb, (*p));
+            ImRect_AddPoint(local_bb, (*p));
+        ImRect_AddPoint(bb, ImVec2(local_bb.x, local_bb.y));
+        ImRect_AddPoint(bb, ImVec2(local_bb.z, local_bb.w));
     }
 
     if (Flags & ImDrawListFlags_AntiAliasedFill)
