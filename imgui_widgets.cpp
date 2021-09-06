@@ -4012,6 +4012,8 @@ ImGuiInputTextCallbackData::ImGuiInputTextCallbackData()
 // FIXME: The existence of this rarely exercised code path is a bit of a nuisance.
 void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 {
+    ImGuiContext& g = *GImGui;
+    ImGuiInputTextState* obj = &g.InputTextState;
     IM_ASSERT(pos + bytes_count <= BufTextLen);
     int char_count = ImTextCountCharsFromUtf8(Buf + pos, Buf + pos + bytes_count);
     InputTextDeleteText(pos, bytes_count, char_count);
@@ -4024,6 +4026,8 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
     SelectionStart = SelectionEnd = CursorPos;
     BufDirty = true;
     BufTextLen -= bytes_count;
+    obj->CurLenW = ImTextCountCharsFromUtf8(Buf, NULL);
+    obj->CurLenA = BufTextLen;  // Assume correct length and valid UTF-8 from user, saves us an extra strlen()
 }
 
 void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, const char* new_text_end)
@@ -4054,6 +4058,8 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, cons
     SelectionStart = SelectionEnd = CursorPos;
     BufDirty = true;
     BufTextLen += new_text_len;
+    obj->CurLenW = ImTextCountCharsFromUtf8(Buf, NULL);
+    obj->CurLenA = BufTextLen;  // Assume correct length and valid UTF-8 from user, saves us an extra strlen()
 }
 
 // Return false to discard a character.
@@ -4772,8 +4778,6 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     {
                         IM_ASSERT(callback_data.BufTextLen == (int)strlen(callback_data.Buf)); // You need to maintain BufTextLen if you change the text!
                         InputTextReconcileUndoStateAfterUserCallback(state, callback_data.Buf, callback_data.BufTextLen); // FIXME: Move the rest of this block inside function and rename to InputTextReconcileStateAfterUserCallback() ?
-                        state->CurLenW = ImTextCountCharsFromUtf8(callback_data.Buf, NULL);
-                        state->CurLenA = callback_data.BufTextLen;  // Assume correct length and valid UTF-8 from user, saves us an extra strlen()
                         state->CursorAnimReset();
                     }
                 }
