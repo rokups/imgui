@@ -288,7 +288,7 @@ struct ImStrv
     const char* End;
     ImStrv()                            { Begin = End = NULL; }
     ImStrv(const char* b)               { Begin = b; End = b ? b + strlen(b) : NULL; }
-    ImStrv(const char* b, const char* e){ Begin = b; End = e ? e : b + strlen(b); }
+    ImStrv(const char* b, const char* e){ Begin = b; End = e ? e : b ? b + strlen(b) : NULL; }
     inline size_t length() const        { return (size_t)(End - Begin); }
     inline bool empty() const           { return Begin == End; }    // == "" or == NULL
     inline operator bool() const        { return Begin != NULL; }   // return true when valid ("" is valid, NULL construction is not)
@@ -494,10 +494,12 @@ namespace ImGui
     //   whereas "str_id" denote a string that is only used as an ID and not normally displayed.
     IMGUI_API void          PushID(ImStrv str_id);                                          // push string into the ID stack (will hash string).
     IMGUI_API void          PushID(const void* ptr_id);                                     // push pointer into the ID stack (will hash pointer).
+    inline    void          PushID(const char* str_id) { PushID(ImStrv(str_id)); }          // required to prevent const void* variant catching c-strings.
     IMGUI_API void          PushID(int int_id);                                             // push integer into the ID stack (will hash integer).
     IMGUI_API void          PopID();                                                        // pop from the ID stack.
     IMGUI_API ImGuiID       GetID(ImStrv str_id);                                           // calculate unique ID (hash of whole ID stack + given parameter). e.g. if you want to query into ImGuiStorage yourself
     IMGUI_API ImGuiID       GetID(const void* ptr_id);
+    inline    ImGuiID       GetID(const char* str_id) { return GetID(ImStrv(str_id)); }     // required to prevent const void* variant catching c-strings.
 
     // Widgets: Text
     // FIXME-IMSTR: Functions taking format should use ImStrv. It breaks IM_FMTARGS() macro however.
