@@ -1607,7 +1607,7 @@ bool ImGui::BeginCombo(ImStrv label, ImStrv preview_value, ImGuiComboFlags flags
     if (flags & ImGuiComboFlags_CustomPreview)
     {
         g.ComboPreviewData.PreviewRect = ImRect(bb.Min.x, bb.Min.y, value_x2, bb.Max.y);
-        IM_ASSERT(!preview_value);
+        IM_ASSERT(preview_value.empty());
         preview_value = NULL;
     }
 
@@ -5739,6 +5739,15 @@ bool ImGui::TreeNode(ImStrv str_id, const char* fmt, ...)
     return is_open;
 }
 
+bool ImGui::TreeNode(const char* str_id, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    bool is_open = TreeNodeExV(str_id, 0, fmt, args);
+    va_end(args);
+    return is_open;
+}
+
 bool ImGui::TreeNode(const void* ptr_id, const char* fmt, ...)
 {
     va_list args;
@@ -5761,6 +5770,11 @@ bool ImGui::TreeNodeV(ImStrv str_id, const char* fmt, va_list args)
     return TreeNodeExV(str_id, 0, fmt, args);
 }
 
+bool ImGui::TreeNodeV(const char* str_id, const char* fmt, va_list args)
+{
+    return TreeNodeV(ImStrv(str_id), fmt, args);
+}
+
 bool ImGui::TreeNodeV(const void* ptr_id, const char* fmt, va_list args)
 {
     return TreeNodeExV(ptr_id, 0, fmt, args);
@@ -5776,6 +5790,15 @@ bool ImGui::TreeNodeEx(ImStrv label, ImGuiTreeNodeFlags flags)
 }
 
 bool ImGui::TreeNodeEx(ImStrv str_id, ImGuiTreeNodeFlags flags, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    bool is_open = TreeNodeExV(str_id, flags, fmt, args);
+    va_end(args);
+    return is_open;
+}
+
+bool ImGui::TreeNodeEx(const char* str_id, ImGuiTreeNodeFlags flags, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -5802,6 +5825,11 @@ bool ImGui::TreeNodeExV(ImStrv str_id, ImGuiTreeNodeFlags flags, const char* fmt
     ImGuiContext& g = *GImGui;
     const char* label_end = g.TempBuffer + ImFormatStringV(g.TempBuffer, IM_ARRAYSIZE(g.TempBuffer), fmt, args);
     return TreeNodeBehavior(window->GetID(str_id), flags, ImStrv(g.TempBuffer, label_end));
+}
+
+bool ImGui::TreeNodeExV(const char* str_id, ImGuiTreeNodeFlags flags, const char* fmt, va_list args)
+{
+    return TreeNodeExV(ImStrv(str_id), flags, fmt, args);
 }
 
 bool ImGui::TreeNodeExV(const void* ptr_id, ImGuiTreeNodeFlags flags, const char* fmt, va_list args)
