@@ -129,15 +129,11 @@ static inline int ImChrcntA(const char* text_begin, const char* text_end, char c
     int count = 0;
     for (const char* p = text_begin; p < text_end;)
     {
-        if (void* cp = memchr((void*)p, c, text_end - p))
-        {
-            count++;
-            p = (const char*)cp + 1;
-        }
-        else
-        {
+        void* cp = memchr((void*)p, c, text_end - p);
+        if (cp == NULL)
             break;
-        }
+        count++;
+        p = (const char*)cp + 1;
     }
     return count;
 }
@@ -147,19 +143,16 @@ static inline int ImChrcntW(const ImWchar* text_begin, const ImWchar* text_end, 
     int count = 0;
     for (const ImWchar* p = text_begin; p < text_end;)
     {
-        if (void* cp = memchr((void*)p, c, (text_end - p) * sizeof(ImWchar)))
-        {
-            // memchr() despite taking integer parameter, performs search for 8 bit characters, but we use it anyway
-            // because it is very fast. To work around this limitation we ensure located pointer is a multiple of
-            // sizeof(ImWchar) and contains searched character.
-            if ((((size_t)cp - (size_t)text_begin) % sizeof(ImWchar)) == 0 && *(ImWchar*)cp == c)
-                count++;
-            p = (const ImWchar*)cp + 1;
-        }
-        else
-        {
+        void* cp = memchr((void*)p, c, (text_end - p) * sizeof(ImWchar));
+        if (cp == NULL)
             break;
-        }
+
+        // memchr() despite taking integer parameter, performs search for 8 bit characters, but we use it anyway
+        // because it is very fast. To work around this limitation we ensure located pointer is a multiple of
+        // sizeof(ImWchar) and contains searched character.
+        if ((((size_t)cp - (size_t)text_begin) % sizeof(ImWchar)) == 0 && *(ImWchar*)cp == c)
+            count++;
+        p = (const ImWchar*)cp + 1;
     }
     return count;
 }
@@ -3678,23 +3671,23 @@ static ImGuiInputTextCharInfo InputTextGetCharInfo(ImGuiInputTextState* obj, int
     int current_line = obj->LinesIndex.index_from_ptr(line_data);
 
     // Index current line so repeated lookups are faster in linear character queries by stb_textedit.
-    if (obj->IndexedLine != current_line)
+    if (obj->CharsIndexLineNo != current_line)
     {
         unsigned int c;
         const char* s = line_start;
-        obj->IndexedLine = current_line;
-        obj->LineOffsets.resize(0);
+        obj->CharsIndexLineNo = current_line;
+        obj->CharsIndexForOneLine.resize(0);
         while (s < line_end)
         {
-            obj->LineOffsets.push_back((int)(s - line_start));
+            obj->CharsIndexForOneLine.push_back((int)(s - line_start));
             s += ImTextCharFromUtf8(&c, s, line_end);
         }
     }
     int line_codepoint_index = idx - line_data->CodepointOffset;
-    IM_ASSERT(line_codepoint_index < obj->LineOffsets.Size);
+    IM_ASSERT(line_codepoint_index < obj->CharsIndexForOneLine.Size);
 
     // Decode character pointed by idx and assemble return values
-    char* s = line_start + obj->LineOffsets.Data[line_codepoint_index];
+    char* s = line_start + obj->CharsIndexForOneLine.Data[line_codepoint_index];
     ImGuiInputTextCharInfo data;
     data.Text = s;
     data.CodepointBytes = ImTextCharFromUtf8(&data.Codepoint, s, line_end);
@@ -3801,7 +3794,7 @@ static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
     char* dst = buf + pos;
     const char* src = buf + pos + bytes_count;
     int remove_lines = ImChrcntA(dst, src, '\n');
-    int move_len = strlen(src);
+    int move_len = (int)strlen(src);
     memmove(dst, src, move_len + 1);
 
     // Update line index. Only scan current line and shift subsequent line offsets back.
@@ -3809,7 +3802,7 @@ static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
     ImGuiInputTextLineInfo* data = obj->GetLineInfo(pos, false);
     int line_num = obj->LinesIndex.index_from_ptr(data);
     InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
-    obj->IndexedLine = -1;
+    obj->CharsIndexLineNo = -1;
 }
 
 // Insert a specified number of bytes into TextA buffer at specified position. Caller will fill them.
@@ -3832,7 +3825,7 @@ static char* InputTextInsertTextMakeSpace(int pos, int bytes_count)
     if (pos != obj->CurLenA)
         memmove(text + bytes_count, text, text_len - pos);
     text[text_len - pos + bytes_count] = 0;
-    obj->IndexedLine = -1;
+    obj->CharsIndexLineNo = -1;
     return text;
 }
 
@@ -3892,7 +3885,7 @@ static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
     int remove_bytes = 0;
     for (int i = 0; i < n; i++)
         remove_bytes += ImTextCountUtf8BytesFromChar(dst + remove_bytes, dst_end);
-    InputTextDeleteText(dst - obj->TextA.Data, remove_bytes, n);
+    InputTextDeleteText((int)(dst - obj->TextA.Data), remove_bytes, n);
 
     // Update state fields.
     obj->Edited = true;
@@ -3905,7 +3898,7 @@ static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const ST
     // Insert new text.
     ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, pos);
     const int bytes_count = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
-    char* dest = InputTextInsertTextMakeSpace(data.Text - obj->TextA.Data, bytes_count);
+    char* dest = InputTextInsertTextMakeSpace((int)(data.Text - obj->TextA.Data), bytes_count);
     if (dest == NULL)
         return false;
 
@@ -4320,7 +4313,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         state->TextA.resize(state->CurLenA + 1);
         memcpy(state->TextA.Data, state->InitialTextA.Data, state->CurLenA);
         state->TextA[state->CurLenA] = 0;
-        state->IndexedLine = -1;
+        state->CharsIndexLineNo = -1;
         InputTextReindexLines(state);
 
         if (recycle_state)
@@ -4983,8 +4976,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 // Perform clipping using line index. Text is rendered only within frame rect.
                 text_pos = frame_bb.Min + style.FramePadding;
-                int first_line = ImFloor((clip_rect.y + style.FramePadding.y - draw_pos.y) / g.FontSize);
-                int last_line = first_line + ImCeil((clip_rect.w - clip_rect.y) / g.FontSize);
+                int first_line = (int)ImFloor((clip_rect.y + style.FramePadding.y - draw_pos.y) / g.FontSize);
+                int last_line = first_line + (int)ImCeil((clip_rect.w - clip_rect.y) / g.FontSize);
 
                 // Include one line before a first line, to correctly render that line which is partially scrolled out of view.
                 if (first_line > 0)

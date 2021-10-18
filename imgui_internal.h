@@ -1021,9 +1021,9 @@ struct IMGUI_API ImGuiInputTextState
     int                     CurLenW, CurLenA;       // we need to maintain our buffer length in both UTF-8 and wchar format.
     ImVector<char>          TextA;                  // temporary UTF8 buffer for callbacks and other operations. this is not updated in every code-path! size=capacity.
     ImVector<char>          InitialTextA;           // backup of end-user buffer at the time of focus (in UTF-8, unaltered)
-    ImVector<int>           LineOffsets;            // LineOffsets[codepoint_index] == byte_offset for last accessed line.
-    int                     IndexedLine;            // Last accessed line.
     ImVector<ImGuiInputTextLineInfo> LinesIndex;    // Map line number (vector index) to byte offset in char buffer (upper 4 bytes) + codepoint count from start of the string (lower 4 bytes).
+    ImVector<int>           CharsIndexForOneLine;   // CharsIndex[codepoint_index] == byte_offset for last accessed line.
+    int                     CharsIndexLineNo;       // Last accessed line.
     int                     BufCapacityA;           // end-user buffer capacity
     float                   ScrollX;                // horizontal scrolling/offset
     ImStb::STB_TexteditState Stb;                   // state for stb_textedit.h
@@ -1033,9 +1033,9 @@ struct IMGUI_API ImGuiInputTextState
     bool                    Edited;                 // edited this frame
     ImGuiInputTextFlags     Flags;                  // copy of InputText() flags
 
-    ImGuiInputTextState()                   { memset(this, 0, sizeof(*this)); IndexedLine = -1; }
-    void        ClearText()                 { CurLenW = CurLenA = 0; TextA[0] = 0; IndexedLine = -1; LineOffsets.resize(0); LinesIndex.resize(0); CursorClamp(); }
-    void        ClearFreeMemory()           { LineOffsets.clear(); LinesIndex.clear(); TextA.clear(); InitialTextA.clear(); }
+    ImGuiInputTextState()                   { memset(this, 0, sizeof(*this)); CharsIndexLineNo = -1; }
+    void        ClearText()                 { CurLenW = CurLenA = 0; TextA[0] = 0; CharsIndexLineNo = -1; CharsIndexForOneLine.resize(0); LinesIndex.resize(0); CursorClamp(); }
+    void        ClearFreeMemory()           { TextA.clear(); InitialTextA.clear(); LinesIndex.clear(); CharsIndexForOneLine.clear(); }
     int         GetUndoAvailCount() const   { return Stb.undostate.undo_point; }
     int         GetRedoAvailCount() const   { return STB_TEXTEDIT_UNDOSTATECOUNT - Stb.undostate.redo_point; }
     void        OnKeyPressed(int key);      // Cannot be inline because we call in code in stb_textedit.h implementation
