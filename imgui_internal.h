@@ -1039,7 +1039,9 @@ struct IMGUI_API ImGuiInputTextState
     int         GetUndoAvailCount() const   { return Stb.undostate.undo_point; }
     int         GetRedoAvailCount() const   { return STB_TEXTEDIT_UNDOSTATECOUNT - Stb.undostate.redo_point; }
     void        OnKeyPressed(int key);      // Cannot be inline because we call in code in stb_textedit.h implementation
-    ImGuiInputTextLineInfo* GetLineInfo(int pos, bool char_pos=true) const;// Look up info in line index.
+    ImGuiInputTextLineInfo* GetLineInfoEx(int pos, bool char_pos) const;    // Look up info in line index.
+    ImGuiInputTextLineInfo* GetLineInfoByCodepointPos(int pos) const        { return GetLineInfoEx(pos, true); }
+    ImGuiInputTextLineInfo* GetLineInfoByBytePos(int pos) const             { return GetLineInfoEx(pos, false); }
 
     // Cursor & Selection
     void        CursorAnimReset()           { CursorAnim = -0.30f; }                                   // After a user-input the cursor stays on for a while without blinking

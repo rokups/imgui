@@ -3664,7 +3664,7 @@ struct ImGuiInputTextCharInfo
 static ImGuiInputTextCharInfo InputTextGetCharInfo(ImGuiInputTextState* obj, int idx)
 {
     // Find line in our index
-    ImGuiInputTextLineInfo* line_data = obj->GetLineInfo(idx);
+    ImGuiInputTextLineInfo* line_data = obj->GetLineInfoByCodepointPos(idx);
     IM_ASSERT(line_data != NULL);
     char* line_start = obj->TextA.Data + line_data->ByteOffset;
     char* line_end = line_start + line_data->ByteLen;
@@ -3799,7 +3799,7 @@ static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
 
     // Update line index. Only scan current line and shift subsequent line offsets back.
     ImGuiInputTextState* obj = &g.InputTextState;
-    ImGuiInputTextLineInfo* data = obj->GetLineInfo(pos, false);
+    ImGuiInputTextLineInfo* data = obj->GetLineInfoByBytePos(pos);
     int line_num = obj->LinesIndex.index_from_ptr(data);
     InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
     obj->CharsIndexLineNo = -1;
@@ -3859,7 +3859,7 @@ static void    STB_TEXTEDIT_LAYOUTROW(StbTexteditRow* r, ImGuiInputTextState* ob
 
 static int    STB_TEXTEDIT_CHARTOBOL(ImGuiInputTextState* obj, int idx, int* line_num)
 {
-    ImGuiInputTextLineInfo* line_data = obj->GetLineInfo(idx);
+    ImGuiInputTextLineInfo* line_data = obj->GetLineInfoByCodepointPos(idx);
     if (line_num)
         *line_num = obj->LinesIndex.index_from_ptr(line_data);
     return line_data->CodepointOffset;
@@ -3969,9 +3969,9 @@ void ImGuiInputTextState::OnKeyPressed(int key)
 
 
 // Same algorithm as LowerBound() in imgui.cpp
-ImGuiInputTextLineInfo* ImGuiInputTextState::GetLineInfo(int pos, bool char_pos) const
+ImGuiInputTextLineInfo* ImGuiInputTextState::GetLineInfoEx(int pos, bool codepoint_pos) const
 {
-    if (LinesIndex.empty())
+    if (LinesIndex.Size == 0)
         return NULL;
 
     ImGuiInputTextLineInfo* first = LinesIndex.Data;
@@ -3981,7 +3981,7 @@ ImGuiInputTextLineInfo* ImGuiInputTextState::GetLineInfo(int pos, bool char_pos)
         int count2 = count >> 1;
         ImGuiInputTextLineInfo* mid = first + count2;
 
-        bool match = char_pos ? mid->CodepointOffset + mid->CodepointLen <= pos : mid->ByteOffset + mid->ByteLen <= pos;
+        bool match = codepoint_pos ? (mid->CodepointOffset + mid->CodepointLen <= pos) : (mid->ByteOffset + mid->ByteLen <= pos);
         if (match)
         {
             first = ++mid;
@@ -4037,7 +4037,7 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, cons
     memcpy(dest, new_text, (size_t)new_text_len * sizeof(char));
 
     // Update line index.
-    ImGuiInputTextLineInfo* data = g.InputTextState.GetLineInfo(pos, false);
+    ImGuiInputTextLineInfo* data = g.InputTextState.GetLineInfoByBytePos(pos);
     int line_num = g.InputTextState.LinesIndex.index_from_ptr(data);
     int char_count = ImTextCountCharsFromUtf8(new_text, new_text_end);
     int new_lines = ImChrcntA(new_text, new_text_end, '\n');
