@@ -4588,13 +4588,12 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 const int ib = state->HasSelection() ? ImMin(state->Stb.select_start, state->Stb.select_end) : 0;
                 const int ie = state->HasSelection() ? ImMax(state->Stb.select_start, state->Stb.select_end) : state->CurLenW;
-                // FIXME: calculate utf8 len
-                const int clipboard_data_len = ie - ib + 1;
-                char* clipboard_data = (char*)IM_ALLOC(clipboard_data_len * sizeof(char));
-                memcpy(clipboard_data, state->TextA.Data + ib, ie - ib);
-                clipboard_data[clipboard_data_len - 1] = 0;
-                SetClipboardText(clipboard_data);
-                MemFree(clipboard_data);
+                ImGuiInputTextCharInfo selected_begin = InputTextGetCharInfo(state, ib);
+                ImGuiInputTextCharInfo selected_end = InputTextGetCharInfo(state, ie);
+                ImVector<char> clipboard_data;
+                clipboard_data.resize(selected_end.Text - selected_begin.Text + 1);
+                ImStrncpy(clipboard_data.Data, selected_begin.Text, clipboard_data.Size);
+                SetClipboardText(clipboard_data.Data);
             }
             if (is_cut)
             {
