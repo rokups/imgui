@@ -3637,6 +3637,7 @@ struct ImGuiInputTextCharInfo
     int             LineNum;                // Line number of text pointed by Text
     unsigned int    Codepoint;              // First codepoint decoded at Text pointer
     int             CodepointBytes;         // Number of bytes occupied by decoded codepoint.
+    ImGuiInputTextLineInfo* LineInfo;       // May be invalidated after any API call, use immediately!
 
     ImGuiInputTextCharInfo() { memset(this, 0, sizeof(*this)); }
 };
@@ -3673,6 +3674,7 @@ static ImGuiInputTextCharInfo InputTextGetCharInfo(ImGuiInputTextState* obj, int
     data.Text = s;
     data.CodepointBytes = ImTextCharFromUtf8(&data.Codepoint, s, line_end);
     data.BytesToEOL = (int)(line_end - s);
+    data.LineInfo = line_data;
     data.LineNum = current_line;
     return data;
 }
@@ -3869,7 +3871,7 @@ static void    STB_TEXTEDIT_LAYOUTROW(StbTexteditRow* r, ImGuiInputTextState* ob
     r->baseline_y_delta = size.y;
     r->ymin = 0.0f;
     r->ymax = size.y;
-    r->num_chars = ImTextCountCharsFromUtf8(data.Text, data.Text + data.BytesToEOL);
+    r->num_chars = data.LineInfo->CodepointLen;
 }
 
 static int    STB_TEXTEDIT_CHARTOBOL(ImGuiInputTextState* obj, int idx, int* line_num)
