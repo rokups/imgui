@@ -4970,16 +4970,12 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             if (is_multiline)
             {
                 // Perform clipping using line index. Text is rendered only within frame rect.
-                text_pos = frame_bb.Min + style.FramePadding;
                 int first_line = (int)ImFloor((clip_rect.y + style.FramePadding.y - draw_pos.y) / g.FontSize);
                 int last_line = first_line + (int)ImCeil((clip_rect.w - clip_rect.y) / g.FontSize);
 
                 // Include one line before a first line, to correctly render that line which is partially scrolled out of view.
                 if (first_line > 0)
-                {
                     first_line -= 1;
-                    text_pos.y -= g.FontSize;
-                }
 
                 if (first_line < state->LinesIndex.Size)
                 {
@@ -4989,6 +4985,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     else
                         buf_trimmed_end = state->TextA.Data + state->CurLenA;
                 }
+                text_pos.y += g.FontSize * first_line;
             }
             draw_window->DrawList->AddText(g.Font, g.FontSize, text_pos - draw_scroll, col, buf_trimmed, buf_trimmed_end, 0.0f, is_multiline ? NULL : &clip_rect);
         }
