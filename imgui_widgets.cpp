@@ -3770,12 +3770,13 @@ static void InputTextReindexLinesRange(ImGuiInputTextState* obj, int line_start,
     }
 }
 
-static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
+static void InputTextDeleteText(int pos, int bytes_count)
 {
     ImGuiContext& g = *GImGui;
     char* buf = g.InputTextState.TextA.Data;
     char* dst = buf + pos;
     const char* src = buf + pos + bytes_count;
+    int chars_count = ImTextCountCharsFromUtf8(dst, dst + bytes_count);
     int remove_lines = ImChrcntA(dst, src, '\n');
     int move_len = (int)strlen(src);
     memmove(dst, src, move_len + 1);
@@ -3785,7 +3786,12 @@ static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
     ImGuiInputTextLineInfo* data = obj->GetLineInfoByBytePos(pos);
     int line_num = obj->LinesIndex.index_from_ptr(data);
     InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
+
+    // Update state fields.
     obj->CharsIndexLineNo = -1;
+    obj->Edited = true;
+    obj->CurLenA -= bytes_count;
+    obj->CurLenW -= chars_count;
 }
 
 // Insert new utf-8 text.
@@ -3888,12 +3894,7 @@ static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
     int remove_bytes = 0;
     for (int i = 0; i < n; i++)
         remove_bytes += ImTextCountUtf8BytesFromChar(dst + remove_bytes, dst_end);
-    InputTextDeleteText((int)(dst - obj->TextA.Data), remove_bytes, n);
-
-    // Update state fields.
-    obj->Edited = true;
-    obj->CurLenA -= remove_bytes;
-    obj->CurLenW -= n;
+    InputTextDeleteText((int)(dst - obj->TextA.Data), remove_bytes);
 }
 
 static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const STB_TEXTEDIT_CHARTYPE* new_text, int new_text_len)
@@ -3995,11 +3996,8 @@ ImGuiInputTextCallbackData::ImGuiInputTextCallbackData()
 // FIXME: The existence of this rarely exercised code path is a bit of a nuisance.
 void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 {
-    ImGuiContext& g = *GImGui;
-    ImGuiInputTextState* obj = &g.InputTextState;
     IM_ASSERT(pos + bytes_count <= BufTextLen);
-    int char_count = ImTextCountCharsFromUtf8(Buf + pos, Buf + pos + bytes_count);
-    InputTextDeleteText(pos, bytes_count, char_count);
+    InputTextDeleteText(pos, bytes_count);
 
     // Update callback data.
     if (CursorPos >= pos + bytes_count)
@@ -4009,8 +4007,6 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
     SelectionStart = SelectionEnd = CursorPos;
     BufDirty = true;
     BufTextLen -= bytes_count;
-    obj->CurLenW = ImTextCountCharsFromUtf8(Buf, NULL);
-    obj->CurLenA = BufTextLen;  // Assume correct length and valid UTF-8 from user, saves us an extra strlen()
 }
 
 void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, const char* new_text_end)
