@@ -138,25 +138,6 @@ static inline int ImChrcntA(const char* text_begin, const char* text_end, char c
     return count;
 }
 
-static inline int ImChrcntW(const ImWchar* text_begin, const ImWchar* text_end, ImWchar c)
-{
-    int count = 0;
-    for (const ImWchar* p = text_begin; p < text_end;)
-    {
-        void* cp = memchr((void*)p, c, (text_end - p) * sizeof(ImWchar));
-        if (cp == NULL)
-            break;
-
-        // memchr() despite taking integer parameter, performs search for 8 bit characters, but we use it anyway
-        // because it is very fast. To work around this limitation we ensure located pointer is a multiple of
-        // sizeof(ImWchar) and contains searched character.
-        if ((((size_t)cp - (size_t)text_begin) % sizeof(ImWchar)) == 0 && *(ImWchar*)cp == c)
-            count++;
-        p = (const ImWchar*)cp + 1;
-    }
-    return count;
-}
-
 //-------------------------------------------------------------------------
 // [SECTION] Forward Declarations
 //-------------------------------------------------------------------------
@@ -3829,6 +3810,40 @@ static char* InputTextInsertTextMakeSpace(int pos, int bytes_count)
     return text;
 }
 
+static bool ImGuiInputTextState_InsertChars(ImGuiInputTextState* obj, int pos, const char* new_text, const char* new_text_end, int new_text_codepoint_len = 0)
+{
+    // Insert new text.
+    ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, pos);
+    int new_text_len;
+    if (new_text_end)
+    {
+        new_text_len = new_text_end - new_text;
+    }
+    else
+    {
+        new_text_len = strlen(new_text);
+        new_text_end = new_text + new_text_len;
+    }
+
+    char* dest = InputTextInsertTextMakeSpace((int)(data.Text - obj->TextA.Data), new_text_len);
+    if (dest == NULL)
+        return false;
+    if (!new_text_codepoint_len)
+        new_text_codepoint_len = ImTextCountCharsFromUtf8(new_text, new_text_end);
+
+    memcpy(dest, new_text, new_text_len);
+
+    // Update line index.
+    int new_lines = ImChrcntA(dest, dest + new_text_len, '\n');
+    InputTextReindexLinesRange(obj, data.LineNum, new_lines, new_text_len, new_text_codepoint_len);
+
+    // Update state fields.
+    obj->Edited = true;
+    obj->CurLenW += new_text_codepoint_len;
+    obj->CurLenA += new_text_len;
+    return true;
+}
+
 // Wrapper for stb_textedit.h to edit text (our wrapper is for: statically sized buffer, single-line, wchar characters. InputText converts between UTF-8 and wchar)
 namespace ImStb
 {
@@ -3896,27 +3911,14 @@ static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
 static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const STB_TEXTEDIT_CHARTYPE* new_text, int new_text_len)
 {
     // Insert new text.
-    ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, pos);
-    const int bytes_count = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
-    char* dest = InputTextInsertTextMakeSpace((int)(data.Text - obj->TextA.Data), bytes_count);
-    if (dest == NULL)
-        return false;
-
-    // FIXME-OPT: ImTextStrToUtf8 insists on 0-terminating buffer. Could rework ImTextStrToUtf8 to not do this?
-    char c_bkp = dest[bytes_count];
-    ImTextStrToUtf8(dest, bytes_count + 1, new_text, new_text + new_text_len);
-    dest[bytes_count] = c_bkp;
-
-    // Update line index.
-    int new_lines = ImChrcntW(new_text, new_text + new_text_len, (ImWchar)'\n');
-    InputTextReindexLinesRange(obj, data.LineNum, new_lines, bytes_count, new_text_len);
-
-    // Update state fields.
-    obj->Edited = true;
-    obj->CurLenW += new_text_len;
-    obj->CurLenA += bytes_count;
-
-    return true;
+    int new_text_bytes = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
+    ImVector<char> large_buf;
+    char small_buf[64];
+    if (new_text_bytes >= IM_ARRAYSIZE(small_buf))
+        large_buf.resize(new_text_bytes + 1);
+    char* buf = large_buf.empty() ? small_buf : large_buf.Data;
+    ImTextStrToUtf8(buf, new_text_bytes + 1, new_text, new_text + new_text_len);
+    return ImGuiInputTextState_InsertChars(obj, pos, buf, buf + new_text_bytes, new_text_len);
 }
 
 // We don't use an enum so we can build even with conflicting symbols (if another user of stb_textedit.h leak their STB_TEXTEDIT_K_* symbols)
@@ -4029,21 +4031,14 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, cons
     ImGuiInputTextState* obj = &g.InputTextState;
     IM_ASSERT(Buf == obj->TextA.Data);
 
-    // Insert text into TextA buffer.
-    const int new_text_len = new_text_end ? (int)(new_text_end - new_text) : (int)strlen(new_text);
-    char* dest = InputTextInsertTextMakeSpace(pos, new_text_len);
-    if (dest == NULL)
-        return;
-    memcpy(dest, new_text, (size_t)new_text_len * sizeof(char));
+    if (new_text_end == NULL)
+        new_text_end = new_text + (int)strlen(new_text);
 
-    // Update line index.
-    ImGuiInputTextLineInfo* data = g.InputTextState.GetLineInfoByBytePos(pos);
-    int line_num = g.InputTextState.LinesIndex.index_from_ptr(data);
-    int char_count = ImTextCountCharsFromUtf8(new_text, new_text_end);
-    int new_lines = ImChrcntA(new_text, new_text_end, '\n');
-    InputTextReindexLinesRange(&g.InputTextState, line_num, new_lines, new_text_len, char_count);
+    if (!ImGuiInputTextState_InsertChars(obj, pos, new_text, new_text_end))
+        return;
 
     // Update callback data.
+    const int new_text_len = (int)(new_text_end - new_text);
     Buf = obj->TextA.Data;
     BufSize = obj->BufCapacityA = obj->TextA.Size - 1;
     if (CursorPos >= pos)
@@ -4051,8 +4046,6 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, cons
     SelectionStart = SelectionEnd = CursorPos;
     BufDirty = true;
     BufTextLen += new_text_len;
-    obj->CurLenW = ImTextCountCharsFromUtf8(Buf, NULL);
-    obj->CurLenA = BufTextLen;  // Assume correct length and valid UTF-8 from user, saves us an extra strlen()
 }
 
 // Return false to discard a character.
