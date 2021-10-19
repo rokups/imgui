@@ -3788,48 +3788,34 @@ static void InputTextDeleteText(int pos, int bytes_count, int chars_count)
     obj->CharsIndexLineNo = -1;
 }
 
-// Insert a specified number of bytes into TextA buffer at specified position. Caller will fill them.
-static char* InputTextInsertTextMakeSpace(int pos, int bytes_count)
-{
-    ImGuiContext& g = *GImGui;
-    ImGuiInputTextState* obj = &g.InputTextState;
-    const bool is_resizable = (obj->Flags & ImGuiInputTextFlags_CallbackResize) != 0;
-    const int text_len = obj->CurLenA;
-    IM_ASSERT(pos <= obj->CurLenA);
-
-    if (!is_resizable && (bytes_count + obj->CurLenA + 1 > obj->BufCapacityA))
-        return NULL;   // FIXME-OPT: Pasting too much text is ignored completely. Could only ignore part that does not fit.
-
-    // Grow internal buffer if needed
-    if (bytes_count + text_len + 1 > obj->TextA.Size)
-        obj->TextA.resize(text_len + bytes_count + 1);
-
-    char* text = obj->TextA.Data + pos;
-    if (pos != obj->CurLenA)
-        memmove(text + bytes_count, text, text_len - pos);
-    text[text_len - pos + bytes_count] = 0;
-    obj->CharsIndexLineNo = -1;
-    return text;
-}
-
+// Insert new utf-8 text.
 static bool ImGuiInputTextState_InsertChars(ImGuiInputTextState* obj, int pos, const char* new_text, const char* new_text_end, int new_text_codepoint_len = 0)
 {
-    // Insert new text.
+    IM_ASSERT(obj != NULL);
+    IM_ASSERT(new_text != NULL);
+    IM_ASSERT(new_text_end != NULL);
     ImGuiInputTextCharInfo data = InputTextGetCharInfo(obj, pos);
-    int new_text_len;
-    if (new_text_end)
-    {
-        new_text_len = new_text_end - new_text;
-    }
-    else
-    {
-        new_text_len = strlen(new_text);
-        new_text_end = new_text + new_text_len;
-    }
 
-    char* dest = InputTextInsertTextMakeSpace((int)(data.Text - obj->TextA.Data), new_text_len);
-    if (dest == NULL)
-        return false;
+    // Insert a specified number of bytes into TextA buffer at specified position. Caller will fill them.
+    int insert_pos = (int)(data.Text - obj->TextA.Data);
+    const bool is_resizable = (obj->Flags & ImGuiInputTextFlags_CallbackResize) != 0;
+    const int text_len = obj->CurLenA;
+    const int new_text_len = (int)(new_text_end - new_text);
+    IM_ASSERT(insert_pos <= obj->CurLenA);
+
+    if (!is_resizable && (new_text_len + obj->CurLenA + 1 > obj->BufCapacityA))
+        return false;   // FIXME: Pasting too much text is ignored completely. Could only ignore part that does not fit.
+
+    // Grow internal buffer if needed
+    if (new_text_len + text_len + 1 > obj->TextA.Size)
+        obj->TextA.resize(text_len + new_text_len + 1);
+
+    char* dest = obj->TextA.Data + insert_pos;
+    if (insert_pos != obj->CurLenA)
+        memmove(dest + new_text_len, dest, text_len - insert_pos);
+    dest[text_len - insert_pos + new_text_len] = 0;
+    obj->CharsIndexLineNo = -1;
+
     if (!new_text_codepoint_len)
         new_text_codepoint_len = ImTextCountCharsFromUtf8(new_text, new_text_end);
 
