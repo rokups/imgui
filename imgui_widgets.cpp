@@ -4912,24 +4912,28 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         const ImVec2 draw_scroll = ImVec2(state->ScrollX, 0.0f);
         if (render_selection)
         {
-            const char* text_selected_begin = InputTextGetCharInfo(state, ImMin(state->Stb.select_start, state->Stb.select_end)).Text;
-            const char* text_selected_end = InputTextGetCharInfo(state, ImMax(state->Stb.select_start, state->Stb.select_end)).Text;
+            ImGuiInputTextCharInfo selected_begin = InputTextGetCharInfo(state, ImMin(state->Stb.select_start, state->Stb.select_end));
+            ImGuiInputTextCharInfo selected_end = InputTextGetCharInfo(state, ImMax(state->Stb.select_start, state->Stb.select_end));
+            ImGuiInputTextLineInfo* line_begin = selected_begin.LineInfo;
+            ImGuiInputTextLineInfo* line_end = selected_end.LineInfo;
 
             ImU32 bg_color = GetColorU32(ImGuiCol_TextSelectedBg, render_cursor ? 1.0f : 0.6f); // FIXME: current code flow mandate that render_cursor is always true here, we are leaving the transparent one for tests.
             float bg_offy_up = is_multiline ? 0.0f : -1.0f;    // FIXME: those offsets should be part of the style? they don't play so well with multi-line selection.
             float bg_offy_dn = is_multiline ? 0.0f : 2.0f;
             ImVec2 rect_pos = draw_pos + selection_start_offset - draw_scroll;
-            for (const char* p = text_selected_begin; p < text_selected_end; )
+
+            const char* p = selected_begin.Text;
+            const char* buf = state->TextA.Data;
+            for (ImGuiInputTextLineInfo* line = line_begin; line <= line_end; line++)
             {
                 if (rect_pos.y > clip_rect.w + g.FontSize)
                     break;
 
                 // p points to internal buffer which is guaranteed to be \0-terminated.
-                const char* p_eol = strchr(p, '\n');
-                p_eol = p_eol ? p_eol + 1 : text_selected_end;
+                const char* p_eol = buf + line->ByteOffset + line->ByteLen;
                 if (rect_pos.y >= clip_rect.y)
                 {
-                    ImVec2 rect_size = CalcTextSize(p, ImMin(p_eol, text_selected_end));
+                    ImVec2 rect_size = CalcTextSize(p, ImMin(p_eol, (const char*)selected_end.Text));
                     if (rect_size.x <= 0.0f) rect_size.x = IM_FLOOR(g.Font->GetCharAdvance((ImWchar)' ') * 0.50f); // So we can see selected empty lines
                     ImRect rect(rect_pos + ImVec2(0.0f, bg_offy_up - g.FontSize), rect_pos + ImVec2(rect_size.x, bg_offy_dn));
                     rect.ClipWith(clip_rect);
