@@ -3655,15 +3655,11 @@ static ImGuiInputTextCharInfo InputTextGetCharInfo(ImGuiInputTextState* obj, int
     // Index current line so repeated lookups are faster in linear character queries by stb_textedit.
     if (obj->CharsIndexLineNo != current_line)
     {
-        unsigned int c;
-        const char* s = line_start;
         obj->CharsIndexLineNo = current_line;
         obj->CharsIndexForOneLine.resize(0);
-        while (s < line_end)
-        {
+        unsigned int c;
+        for (const char* s = line_start; s < line_end; s += ImTextCharFromUtf8(&c, s, line_end))
             obj->CharsIndexForOneLine.push_back((int)(s - line_start));
-            s += ImTextCharFromUtf8(&c, s, line_end);
-        }
     }
     int line_codepoint_index = idx - line_data->CodepointOffset;
     IM_ASSERT(line_codepoint_index < obj->CharsIndexForOneLine.Size);
@@ -3760,20 +3756,16 @@ static void InputTextReindexLinesRange(ImGuiInputTextState* obj, int line_start,
     }
 
     // Offset subsequent line data.
-    ImGuiInputTextLineInfo* line_data = obj->LinesIndex.Data + line_end;
-    ImGuiInputTextLineInfo* line_data_end = obj->LinesIndex.Data + obj->LinesIndex.Size;
-    while (line_data < line_data_end)
+    for (int i = line_end; i < obj->LinesIndex.Size; i++)
     {
-        line_data->CodepointOffset += added_chars;
-        line_data->ByteOffset += added_bytes;
-        line_data++;
+        obj->LinesIndex[i].CodepointOffset += added_chars;
+        obj->LinesIndex[i].ByteOffset += added_bytes;
     }
 }
 
-static void InputTextDeleteText(int pos, int bytes_count)
+static void ImGuiInputTextState_RemoveChars(ImGuiInputTextState* obj, int pos, int bytes_count)
 {
-    ImGuiContext& g = *GImGui;
-    char* buf = g.InputTextState.TextA.Data;
+    char* buf = obj->TextA.Data;
     char* dst = buf + pos;
     const char* src = buf + pos + bytes_count;
     int chars_count = ImTextCountCharsFromUtf8(dst, dst + bytes_count);
@@ -3782,7 +3774,6 @@ static void InputTextDeleteText(int pos, int bytes_count)
     memmove(dst, src, move_len + 1);
 
     // Update line index. Only scan current line and shift subsequent line offsets back.
-    ImGuiInputTextState* obj = &g.InputTextState;
     ImGuiInputTextLineInfo* data = obj->GetLineInfoByBytePos(pos);
     int line_num = obj->LinesIndex.index_from_ptr(data);
     InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
@@ -3894,7 +3885,7 @@ static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
     int remove_bytes = 0;
     for (int i = 0; i < n; i++)
         remove_bytes += ImTextCountUtf8BytesFromChar(dst + remove_bytes, dst_end);
-    InputTextDeleteText((int)(dst - obj->TextA.Data), remove_bytes);
+    ImGuiInputTextState_RemoveChars(obj, (int)(dst - obj->TextA.Data), remove_bytes);
 }
 
 static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const STB_TEXTEDIT_CHARTYPE* new_text, int new_text_len)
@@ -3996,8 +3987,10 @@ ImGuiInputTextCallbackData::ImGuiInputTextCallbackData()
 // FIXME: The existence of this rarely exercised code path is a bit of a nuisance.
 void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 {
+    ImGuiContext& g = *GImGui;
+    ImGuiInputTextState* obj = &g.InputTextState;
     IM_ASSERT(pos + bytes_count <= BufTextLen);
-    InputTextDeleteText(pos, bytes_count);
+    ImGuiInputTextState_RemoveChars(obj, pos, bytes_count);
 
     // Update callback data.
     if (CursorPos >= pos + bytes_count)
@@ -4591,7 +4584,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 ImGuiInputTextCharInfo selected_begin = InputTextGetCharInfo(state, ib);
                 ImGuiInputTextCharInfo selected_end = InputTextGetCharInfo(state, ie);
                 ImVector<char> clipboard_data;
-                clipboard_data.resize(selected_end.Text - selected_begin.Text + 1);
+                clipboard_data.resize((int)(selected_end.Text - selected_begin.Text) + 1);
                 ImStrncpy(clipboard_data.Data, selected_begin.Text, clipboard_data.Size);
                 SetClipboardText(clipboard_data.Data);
             }
@@ -4922,14 +4915,13 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             ImVec2 rect_pos = draw_pos + selection_start_offset - draw_scroll;
 
             const char* p = selected_begin.Text;
-            const char* buf = state->TextA.Data;
             for (ImGuiInputTextLineInfo* line = line_begin; line <= line_end; line++)
             {
                 if (rect_pos.y > clip_rect.w + g.FontSize)
                     break;
 
                 // p points to internal buffer which is guaranteed to be \0-terminated.
-                const char* p_eol = buf + line->ByteOffset + line->ByteLen;
+                const char* p_eol = state->TextA.Data + line->ByteOffset + line->ByteLen;
                 if (rect_pos.y >= clip_rect.y)
                 {
                     ImVec2 rect_size = CalcTextSize(p, ImMin(p_eol, (const char*)selected_end.Text));
