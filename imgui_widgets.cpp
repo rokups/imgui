@@ -3662,14 +3662,17 @@ static ImGuiInputTextCharInfo InputTextGetCharInfo(ImGuiInputTextState* obj, int
             obj->CharsIndexForOneLine.push_back((int)(s - line_start));
     }
     int line_codepoint_index = idx - line_data->CodepointOffset;
-    IM_ASSERT(line_codepoint_index < obj->CharsIndexForOneLine.Size);
 
     // Decode character pointed by idx and assemble return values
-    char* s = line_start + obj->CharsIndexForOneLine.Data[line_codepoint_index];
     ImGuiInputTextCharInfo data;
+    char* s = line_end;
+    if (line_codepoint_index < obj->CharsIndexForOneLine.Size)
+    {
+        s = line_start + obj->CharsIndexForOneLine.Data[line_codepoint_index];
+        data.CodepointBytes = ImTextCharFromUtf8(&data.Codepoint, s, line_end);
+        data.BytesToEOL = (int)(line_end - s);
+    }
     data.Text = s;
-    data.CodepointBytes = ImTextCharFromUtf8(&data.Codepoint, s, line_end);
-    data.BytesToEOL = (int)(line_end - s);
     data.LineInfo = line_data;
     data.LineNum = current_line;
     return data;
@@ -3682,7 +3685,7 @@ static void InputTextReindexLines(ImGuiInputTextState* obj)
     obj->LinesIndex.resize(0);
     int char_count = 0;
     const char* text_begin = obj->TextA.Data;
-    const char* text_end = &text_begin[obj->CurLenA + 1];
+    const char* text_end = &text_begin[obj->CurLenA];
     const char* lf = NULL;
     const char* line_begin = text_begin;
 
@@ -3704,6 +3707,7 @@ static void InputTextReindexLines(ImGuiInputTextState* obj)
 }
 
 // Update line index by adding or removing specified number of lines and updating affected index entries.
+// TextA/CurLenA fields must be updated before calling this function!
 static void InputTextReindexLinesRange(ImGuiInputTextState* obj, int line_start, int lines_added, int added_bytes, int added_chars)
 {
     int line_end;
@@ -3735,7 +3739,7 @@ static void InputTextReindexLinesRange(ImGuiInputTextState* obj, int line_start,
 
     // Reindex a limited number of lines in the middle of text.
     const char* text_begin = obj->TextA.Data;
-    const char* text_end = text_begin + obj->TextA.Size;
+    const char* text_end = text_begin + obj->CurLenA;
     for (int i = line_start; i < line_end; i++)
     {
         ImGuiInputTextLineInfo* line_data = &obj->LinesIndex.Data[i];
@@ -3770,19 +3774,19 @@ static void ImGuiInputTextState_RemoveChars(ImGuiInputTextState* obj, int pos, i
     const char* src = buf + pos + bytes_count;
     int chars_count = ImTextCountCharsFromUtf8(dst, dst + bytes_count);
     int remove_lines = ImChrcntA(dst, src, '\n');
-    int move_len = (int)strlen(src);
-    memmove(dst, src, move_len + 1);
-
-    // Update line index. Only scan current line and shift subsequent line offsets back.
-    ImGuiInputTextLineInfo* data = obj->GetLineInfoByBytePos(pos);
-    int line_num = obj->LinesIndex.index_from_ptr(data);
-    InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
+    int move_len = obj->CurLenA - pos - bytes_count + 1;
+    memmove(dst, src, move_len);
 
     // Update state fields.
     obj->CharsIndexLineNo = -1;
     obj->Edited = true;
     obj->CurLenA -= bytes_count;
     obj->CurLenW -= chars_count;
+
+    // Update line index. Only scan current line and shift subsequent line offsets back.
+    ImGuiInputTextLineInfo* data = obj->GetLineInfoByBytePos(pos);
+    int line_num = obj->LinesIndex.index_from_ptr(data);
+    InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
 }
 
 // Insert new utf-8 text.
@@ -3818,14 +3822,14 @@ static bool ImGuiInputTextState_InsertChars(ImGuiInputTextState* obj, int pos, c
 
     memcpy(dest, new_text, new_text_len);
 
-    // Update line index.
-    int new_lines = ImChrcntA(dest, dest + new_text_len, '\n');
-    InputTextReindexLinesRange(obj, data.LineNum, new_lines, new_text_len, new_text_codepoint_len);
-
     // Update state fields.
     obj->Edited = true;
     obj->CurLenW += new_text_codepoint_len;
     obj->CurLenA += new_text_len;
+
+    // Update line index.
+    int new_lines = ImChrcntA(dest, dest + new_text_len, '\n');
+    InputTextReindexLinesRange(obj, data.LineNum, new_lines, new_text_len, new_text_codepoint_len);
     return true;
 }
 
