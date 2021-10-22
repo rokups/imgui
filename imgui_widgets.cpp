@@ -3773,7 +3773,6 @@ static void ImGuiInputTextState_RemoveChars(ImGuiInputTextState* obj, int pos, i
     char* dst = buf + pos;
     const char* src = buf + pos + bytes_count;
     int chars_count = ImTextCountCharsFromUtf8(dst, dst + bytes_count);
-    int remove_lines = ImChrcntA(dst, src, '\n');
     int move_len = obj->CurLenA - pos - bytes_count + 1;
     memmove(dst, src, move_len);
 
@@ -3784,9 +3783,9 @@ static void ImGuiInputTextState_RemoveChars(ImGuiInputTextState* obj, int pos, i
     obj->CurLenW -= chars_count;
 
     // Update line index. Only scan current line and shift subsequent line offsets back.
-    ImGuiInputTextLineInfo* data = obj->GetLineInfoByBytePos(pos);
-    int line_num = obj->LinesIndex.index_from_ptr(data);
-    InputTextReindexLinesRange(obj, line_num, -remove_lines, -bytes_count, -chars_count);
+    int start_line_num = obj->LinesIndex.index_from_ptr(obj->GetLineInfoByBytePos(pos));
+    int end_line_num = obj->LinesIndex.index_from_ptr(obj->GetLineInfoByBytePos(pos + bytes_count));
+    InputTextReindexLinesRange(obj, start_line_num, start_line_num - end_line_num, -bytes_count, -chars_count);
 }
 
 // Insert new utf-8 text.
