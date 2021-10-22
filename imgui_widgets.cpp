@@ -4821,8 +4821,6 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (render_cursor || render_selection)
     {
         IM_ASSERT(state != NULL);
-        if (!is_displaying_hint)
-            buf_display_end = buf_display + state->CurLenA;
 
         // Render text (with cursor and selection)
         // This is going to be messy. We need to:
