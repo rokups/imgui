@@ -171,6 +171,10 @@
 //    STB_TEXTEDIT_K_LINEEND2            secondary keyboard input to move cursor to end of line
 //    STB_TEXTEDIT_K_TEXTSTART2          secondary keyboard input to move cursor to start of text
 //    STB_TEXTEDIT_K_TEXTEND2            secondary keyboard input to move cursor to end of text
+//    STB_TEXTEDIT_LAYOUTROW_EX(r,str,i,&y) return index of line at char i, if r != NULL layout row
+//                                          containing char i, if y != NULL set y coordinate of row
+//                                          containing char i.
+//
 //
 // Keyboard input must be encoded as a single integer value; e.g. a character code
 // and some bitflags that represent shift states. to simplify the interface, SHIFT must
@@ -524,6 +528,12 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
    // search rows to find the one that straddles character n
    find->y = 0;
 
+#ifdef STB_TEXTEDIT_LAYOUTROW_EX
+   // A way for user to override row layouting and implement retrieval start of the line and row layoutting more efficiently.
+   i = STB_TEXTEDIT_LAYOUTROW_EX(&r, str, n, &find->y);
+   prev_start = i && STB_TEXTEDIT_LAYOUTROW_EX(NULL, str, i - 1, NULL);
+#else
+   // Default implementation. Not very efficient when editing huge text buffer.
    first = n == 0 || STB_TEXTEDIT_GETCHAR(str, n - 1) == STB_TEXTEDIT_NEWLINE;
    for(;;) {
       STB_TEXTEDIT_LAYOUTROW(&r, str, i);
@@ -534,6 +544,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
       i += r.num_chars;
       find->y += r.baseline_y_delta;
    }
+#endif
 
    find->first_char = first = i;
    find->length = r.num_chars;
