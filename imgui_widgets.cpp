@@ -4834,30 +4834,34 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         ImVec2 selection_start_offset;
 
         {
+            const char* cursor_line_start = NULL;
             const char* cursor_text_start = NULL;
+            const char* cursor_line_end = NULL;
             const char* cursor_text_end = NULL;
             const int line_count = state->LinesIndex.Size;
             int selection_start = line_count;       // A cursor position.
-            int selection_end = line_count;         // May be in either side of the cursor.
+            int selection_end = -1;                 // May be in either side of the cursor.
             if (render_cursor)
             {
                 ImGuiInputTextCharInfo data = InputTextGetCharInfo(state, state->Stb.cursor);
+                cursor_line_start = text_begin + data.LineInfo->ByteOffset;
                 cursor_text_start = data.Text;
                 selection_start = data.LineNum + 1; // Cursor position starts at the top of current line and spans until the start of top of next line.
             }
             if (render_selection)
             {
                 ImGuiInputTextCharInfo data = InputTextGetCharInfo(state, ImMin(state->Stb.select_start, state->Stb.select_end));
+                cursor_line_end = text_begin + data.LineInfo->ByteOffset;
                 cursor_text_end = data.Text;
                 selection_end = data.LineNum + 1;
             }
 
             // Calculate 2d position by finding the beginning of the line and measuring distance
-            cursor_offset.x = CalcTextSize(ImStrbolA(cursor_text_start, text_begin), cursor_text_start).x;
+            cursor_offset.x = CalcTextSize(cursor_line_start, cursor_text_start).x;
             cursor_offset.y = (float)selection_start * g.FontSize;
             if (selection_end >= 0)
             {
-                selection_start_offset.x = CalcTextSize(ImStrbolA(cursor_text_end, text_begin), cursor_text_end).x;
+                selection_start_offset.x = CalcTextSize(cursor_line_end, cursor_text_end).x;
                 selection_start_offset.y = (float)selection_end * g.FontSize;
             }
 
