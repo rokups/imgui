@@ -30,6 +30,16 @@ HOW TO UPDATE?
   and API updates have been a little more frequent lately. They are documented below and in imgui.cpp and should not affect all users.
 - Please report any issue!
 
+-----------------------------------------------------------------------
+ VERSION X.XX WIP (In Progress)
+-----------------------------------------------------------------------
+
+- InputText:
+  - Remove a second text edited text copy stored in internal ImWchar buffer, which simplified
+    code and allowed better code reuse between callback and stb_textedit functions.
+  - Fixed navigating with up-arrow when at the end of last line in multiline widget.
+  - Greatly improved performance of multiline widget by using a line index and avoiding iteration
+    of entire text in stb_textedit. [@rokups]
 
 -----------------------------------------------------------------------
  VERSION 1.89 WIP (In Progress)
