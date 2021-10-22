@@ -3860,11 +3860,20 @@ static void    STB_TEXTEDIT_LAYOUTROW(StbTexteditRow* r, ImGuiInputTextState* ob
     r->num_chars = data.LineInfo->CodepointLen;
 }
 
-static int    STB_TEXTEDIT_CHARTOBOL(ImGuiInputTextState* obj, int idx, int* line_num)
+static int    STB_TEXTEDIT_CHARTOBOL(ImGuiInputTextState* obj, int idx, float* y, StbTexteditRow* r)
 {
+    // This code is not entirely correct as it operates under assumption that text has uniform distance between lines.
+    // Rich text would have to loop all the lines, calculating their heights.
     ImGuiInputTextLineInfo* line_data = obj->GetLineInfoByCodepointPos(idx);
-    if (line_num)
-        *line_num = obj->LinesIndex.index_from_ptr(line_data);
+    StbTexteditRow row;
+    if (r == NULL)
+        r = &row;
+    STB_TEXTEDIT_LAYOUTROW(r, obj, line_data->CodepointOffset);
+    if (y != NULL)
+    {
+        int line_num = obj->LinesIndex.index_from_ptr(line_data);
+        *y = line_num * r->baseline_y_delta;
+    }
     return line_data->CodepointOffset;
 }
 

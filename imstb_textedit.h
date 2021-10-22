@@ -557,15 +557,10 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
 
    // [DEAR IMGUI]
    // Efficient way to find target line and line before that. It avoid looping all lines, which is very very slow for
-   // extremely large amount of text. However this code is not entirely correct as it operates under assumption that
-   // text has uniform distance between lines. Rich text would have to loop all the lines, calculating their heights.
-   // If we ever come to that, commented out version should be used instead.
+   // extremely large amount of text.
    (void)single_line;
-   int line_num = 0;
-   i = STB_TEXTEDIT_CHARTOBOL(str, n, &line_num);
-   prev_start = i ? STB_TEXTEDIT_CHARTOBOL(str, i - 1, NULL) : 0;
-   STB_TEXTEDIT_LAYOUTROW(&r, str, i);
-   find->y = line_num * r.baseline_y_delta;
+   i = STB_TEXTEDIT_CHARTOBOL(str, n, &find->y, &r);
+   prev_start = i ? STB_TEXTEDIT_CHARTOBOL(str, i - 1, NULL, NULL) : 0;
 
    /*
    for(;;) {
