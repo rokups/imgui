@@ -1600,7 +1600,7 @@ const char* ImStreolRange(const char* str, const char* str_end)
     return p ? p : str_end;
 }
 
-const ImWchar* ImStrbolW(const ImWchar* buf_mid_line, const ImWchar* buf_begin) // find beginning-of-line
+const char* ImStrbolA(const char* buf_mid_line, const char* buf_begin) // find beginning-of-line
 {
     while (buf_mid_line > buf_begin && buf_mid_line[-1] != '\n')
         buf_mid_line--;
@@ -1947,7 +1947,7 @@ int ImTextStrFromUtf8(ImWchar* buf, int buf_size, const char* in_text, const cha
     return (int)(buf_out - buf);
 }
 
-int ImTextCountCharsFromUtf8(const char* in_text, const char* in_text_end)
+int ImTextCountCharsFromUtf8(const char* in_text, const char* in_text_end, const char** out_text_end)
 {
     int char_count = 0;
     while ((!in_text_end || in_text < in_text_end) && *in_text)
@@ -1958,6 +1958,8 @@ int ImTextCountCharsFromUtf8(const char* in_text, const char* in_text_end)
             break;
         char_count++;
     }
+    if (out_text_end)
+        *out_text_end = in_text;
     return char_count;
 }
 

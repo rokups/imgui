@@ -327,7 +327,7 @@ IMGUI_API char*         ImStrdupcpy(char* dst, size_t* p_dst_size, const char* s
 IMGUI_API const char*   ImStrchrRange(const char* str_begin, const char* str_end, char c);
 IMGUI_API int           ImStrlenW(const ImWchar* str);
 IMGUI_API const char*   ImStreolRange(const char* str, const char* str_end);                // End end-of-line
-IMGUI_API const ImWchar*ImStrbolW(const ImWchar* buf_mid_line, const ImWchar* buf_begin);   // Find beginning-of-line
+IMGUI_API const char*   ImStrbolA(const char* buf_mid_line, const char* buf_begin);         // Find beginning-of-line
 IMGUI_API const char*   ImStristr(const char* haystack, const char* haystack_end, const char* needle, const char* needle_end);
 IMGUI_API void          ImStrTrimBlanks(char* str);
 IMGUI_API const char*   ImStrSkipBlank(const char* str);
@@ -351,7 +351,7 @@ IMGUI_API const char*   ImTextCharToUtf8(char out_buf[5], unsigned int c);      
 IMGUI_API int           ImTextStrToUtf8(char* out_buf, int out_buf_size, const ImWchar* in_text, const ImWchar* in_text_end);   // return output UTF-8 bytes count
 IMGUI_API int           ImTextCharFromUtf8(unsigned int* out_char, const char* in_text, const char* in_text_end);               // read one character. return input UTF-8 bytes count
 IMGUI_API int           ImTextStrFromUtf8(ImWchar* out_buf, int out_buf_size, const char* in_text, const char* in_text_end, const char** in_remaining = NULL);   // return input UTF-8 bytes count
-IMGUI_API int           ImTextCountCharsFromUtf8(const char* in_text, const char* in_text_end);                                 // return number of UTF-8 code-points (NOT bytes count)
+IMGUI_API int           ImTextCountCharsFromUtf8(const char* in_text, const char* in_text_end, const char** out_text_end = NULL);// return number of UTF-8 code-points (NOT bytes count)
 IMGUI_API int           ImTextCountUtf8BytesFromChar(const char* in_text, const char* in_text_end);                             // return number of bytes to express one char in UTF-8
 IMGUI_API int           ImTextCountUtf8BytesFromStr(const ImWchar* in_text, const ImWchar* in_text_end);                        // return number of bytes to express string in UTF-8
 
@@ -1003,16 +1003,25 @@ struct IMGUI_API ImGuiMenuColumns
     void        CalcNextTotalWidth(bool update_offsets);
 };
 
+struct IMGUI_API ImGuiLineInfo
+{
+    int                     ByteOffset;             // Offset from the start of string in bytes.
+    int                     CodepointOffset;        // Offset from the start of string in utf-8 codepoints.
+    int                     ByteLen;                // Length of line in bytes, including \r\n.
+    int                     CodepointLen;           // Length of line in utf-8 codepoints, including \r\n.
+
+    ImGuiLineInfo() { ByteOffset = CodepointOffset = 0; ByteLen = CodepointLen = 0; }
+};
+
 // Internal state of the currently focused/edited text input box
 // For a given item ID, access with ImGui::GetInputTextState()
 struct IMGUI_API ImGuiInputTextState
 {
     ImGuiID                 ID;                     // widget id owning the text state
-    int                     CurLenW, CurLenA;       // we need to maintain our buffer length in both UTF-8 and wchar format. UTF-8 length is valid even if TextA is not.
-    ImVector<ImWchar>       TextW;                  // edit buffer, we need to persist but can't guarantee the persistence of the user-provided buffer. so we copy into own buffer.
+    int                     CurLenW, CurLenA;       // we need to maintain our buffer length in both UTF-8 and wchar format.
     ImVector<char>          TextA;                  // temporary UTF8 buffer for callbacks and other operations. this is not updated in every code-path! size=capacity.
     ImVector<char>          InitialTextA;           // backup of end-user buffer at the time of focus (in UTF-8, unaltered)
-    bool                    TextAIsValid;           // temporary UTF8 buffer is not initially valid before we make the widget active (until then we pull the data from user argument)
+    ImVector<ImGuiLineInfo> LineIndex;            // Map line number (vector index) to byte offset in char buffer (upper 4 bytes) + codepoint count from start of the string (lower 4 bytes).
     int                     BufCapacityA;           // end-user buffer capacity
     float                   ScrollX;                // horizontal scrolling/offset
     ImStb::STB_TexteditState Stb;                   // state for stb_textedit.h
@@ -1023,11 +1032,13 @@ struct IMGUI_API ImGuiInputTextState
     ImGuiInputTextFlags     Flags;                  // copy of InputText() flags
 
     ImGuiInputTextState()                   { memset(this, 0, sizeof(*this)); }
-    void        ClearText()                 { CurLenW = CurLenA = 0; TextW[0] = 0; TextA[0] = 0; CursorClamp(); }
-    void        ClearFreeMemory()           { TextW.clear(); TextA.clear(); InitialTextA.clear(); }
+    void        ClearText()                 { CurLenW = CurLenA = 0; TextA[0] = 0; LineIndex.clear(); CursorClamp(); }
+    void        ClearFreeMemory()           { LineIndex.clear(); TextA.clear(); InitialTextA.clear(); }
     int         GetUndoAvailCount() const   { return Stb.undostate.undo_point; }
     int         GetRedoAvailCount() const   { return STB_TEXTEDIT_UNDOSTATECOUNT - Stb.undostate.redo_point; }
     void        OnKeyPressed(int key);      // Cannot be inline because we call in code in stb_textedit.h implementation
+    void        ReindexLines();             // Create line index.
+    ImGuiLineInfo* GetLineInfo(int pos) const;// Look up info in line index.
 
     // Cursor & Selection
     void        CursorAnimReset()           { CursorAnim = -0.30f; }                                   // After a user-input the cursor stays on for a while without blinking

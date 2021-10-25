@@ -127,7 +127,7 @@ static const ImU64          IM_U64_MAX = (2ULL * 9223372036854775807LL + 1);
 // For InputTextEx()
 static bool             InputTextFilterCharacter(unsigned int* p_char, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data, ImGuiInputSource input_source);
 static int              InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end);
-static ImVec2           InputTextCalcTextSizeW(const ImWchar* text_begin, const ImWchar* text_end, const ImWchar** remaining = NULL, ImVec2* out_offset = NULL, bool stop_on_new_line = false);
+static ImVec2           InputTextCalcTextSizeA(const char* text_begin, const char* text_end, const char** remaining = NULL, ImVec2* out_offset = NULL, bool stop_on_new_line = false);
 
 //-------------------------------------------------------------------------
 // [SECTION] Widgets: Text, etc.
@@ -3628,7 +3628,7 @@ static int InputTextCalcTextLenAndLineCount(const char* text_begin, const char**
     return line_count;
 }
 
-static ImVec2 InputTextCalcTextSizeW(const ImWchar* text_begin, const ImWchar* text_end, const ImWchar** remaining, ImVec2* out_offset, bool stop_on_new_line)
+static ImVec2 InputTextCalcTextSizeA(const char* text_begin, const char* text_end, const char** remaining, ImVec2* out_offset, bool stop_on_new_line)
 {
     ImGuiContext& g = *GImGui;
     ImFont* font = g.Font;
@@ -3638,10 +3638,11 @@ static ImVec2 InputTextCalcTextSizeW(const ImWchar* text_begin, const ImWchar* t
     ImVec2 text_size = ImVec2(0, 0);
     float line_width = 0.0f;
 
-    const ImWchar* s = text_begin;
+    const char* s = text_begin;
     while (s < text_end)
     {
-        unsigned int c = (unsigned int)(*s++);
+        unsigned int c;
+        s += ImTextCharFromUtf8(&c, s, text_end);
         if (c == '\n')
         {
             text_size.x = ImMax(text_size.x, line_width);
@@ -3677,28 +3678,65 @@ static ImVec2 InputTextCalcTextSizeW(const ImWchar* text_begin, const ImWchar* t
 namespace ImStb
 {
 
-static int     STB_TEXTEDIT_STRINGLEN(const ImGuiInputTextState* obj)                             { return obj->CurLenW; }
-static ImWchar STB_TEXTEDIT_GETCHAR(const ImGuiInputTextState* obj, int idx)                      { return obj->TextW[idx]; }
-static float   STB_TEXTEDIT_GETWIDTH(ImGuiInputTextState* obj, int line_start_idx, int char_idx)  { ImWchar c = obj->TextW[line_start_idx + char_idx]; if (c == '\n') return STB_TEXTEDIT_GETWIDTH_NEWLINE; ImGuiContext& g = *GImGui; return g.Font->GetCharAdvance(c) * (g.FontSize / g.Font->FontSize); }
-static int     STB_TEXTEDIT_KEYTOTEXT(int key)                                                    { return key >= 0x200000 ? 0 : key; }
+struct TextPosData
+{
+    char*           Text;                               // Pointer to character at requested index
+    int             BytesToEOL;                         // Number of bytes to the end of line, including \r\n.
+    int             LineNum;                            // Line number of text pointed by Text
+    unsigned int    Codepoint;                          // First codepoint decoded at Text pointer
+    int             CodepointBytes;                     // Number of bytes occupied by decoded codepoint.
+
+    TextPosData() { Text = NULL; BytesToEOL = LineNum = CodepointBytes = 0; Codepoint = 0; }
+};
+
+// Seek utf-8 buffer to specified index and return information about destination codepoint.
+static TextPosData SeekUtf8Buffer(const ImGuiInputTextState* obj, int idx)
+{
+    TextPosData data;
+    ImGuiLineInfo* info = obj->GetLineInfo(idx);                                // Find line
+    IM_ASSERT(info != NULL);
+    int byte_len = info->ByteLen;
+    char* ln_start = obj->TextA.Data + info->ByteOffset;
+    char* ln_end = ln_start + byte_len;
+    char* s = ln_start;
+    unsigned int c;
+    for (int n = idx - info->CodepointOffset; n > 0; n--)                       // Seek characters into line
+        s += ImTextCharFromUtf8(&c, s, ln_end);
+    data.Text = s;
+    data.CodepointBytes = ImTextCharFromUtf8(&data.Codepoint, s, ln_end + 1);   // Decode character pointed by idx
+    data.BytesToEOL = (int)(ln_end - s);
+    data.LineNum = obj->LineIndex.index_from_ptr(info);
+    return data;
+}
+
+static int     STB_TEXTEDIT_STRINGLEN(const ImGuiInputTextState* obj)           { return obj->CurLenW; }
+static ImWchar STB_TEXTEDIT_GETCHAR(const ImGuiInputTextState* obj, int idx)    { TextPosData data = SeekUtf8Buffer(obj, idx); return (ImWchar)data.Codepoint; }
+static float   STB_TEXTEDIT_GETWIDTH(ImGuiInputTextState* obj, int line_start_idx, int char_idx)
+{
+    TextPosData data = SeekUtf8Buffer(obj, line_start_idx + char_idx);
+    if (data.Codepoint == '\n')
+        return STB_TEXTEDIT_GETWIDTH_NEWLINE;
+    ImGuiContext& g = *GImGui;
+    return g.Font->GetCharAdvance((ImWchar)data.Codepoint) * (g.FontSize / g.Font->FontSize);
+}
+static int     STB_TEXTEDIT_KEYTOTEXT(int key)                                  { return key >= 0x200000 ? 0 : key; }
 static ImWchar STB_TEXTEDIT_NEWLINE = '\n';
 static void    STB_TEXTEDIT_LAYOUTROW(StbTexteditRow* r, ImGuiInputTextState* obj, int line_start_idx)
 {
-    const ImWchar* text = obj->TextW.Data;
-    const ImWchar* text_remaining = NULL;
-    const ImVec2 size = InputTextCalcTextSizeW(text + line_start_idx, text + obj->CurLenW, &text_remaining, NULL, true);
+    TextPosData data = SeekUtf8Buffer(obj, line_start_idx);
+    const ImVec2 size = ImGui::CalcTextSize(data.Text, data.Text + data.BytesToEOL);
     r->x0 = 0.0f;
     r->x1 = size.x;
     r->baseline_y_delta = size.y;
     r->ymin = 0.0f;
     r->ymax = size.y;
-    r->num_chars = (int)(text_remaining - (text + line_start_idx));
+    r->num_chars = ImTextCountCharsFromUtf8(data.Text, data.Text + data.BytesToEOL);
 }
 
 // When ImGuiInputTextFlags_Password is set, we don't want actions such as CTRL+Arrow to leak the fact that underlying data are blanks or separators.
 static bool is_separator(unsigned int c)                                        { return ImCharIsBlankW(c) || c==',' || c==';' || c=='(' || c==')' || c=='{' || c=='}' || c=='[' || c==']' || c=='|' || c=='\n' || c=='\r'; }
-static int  is_word_boundary_from_right(ImGuiInputTextState* obj, int idx)      { if (obj->Flags & ImGuiInputTextFlags_Password) return 0; return idx > 0 ? (is_separator(obj->TextW[idx - 1]) && !is_separator(obj->TextW[idx]) ) : 1; }
-static int  is_word_boundary_from_left(ImGuiInputTextState* obj, int idx)       { if (obj->Flags & ImGuiInputTextFlags_Password) return 0; return idx > 0 ? (!is_separator(obj->TextW[idx - 1]) && is_separator(obj->TextW[idx])) : 1; }
+static int  is_word_boundary_from_right(ImGuiInputTextState* obj, int idx)      { if (obj->Flags & ImGuiInputTextFlags_Password) return 0; return idx > 0 ? (is_separator(SeekUtf8Buffer(obj, idx - 1).Codepoint) && !is_separator(SeekUtf8Buffer(obj, idx).Codepoint)) : 1; }
+static int  is_word_boundary_from_left(ImGuiInputTextState* obj, int idx)       { if (obj->Flags & ImGuiInputTextFlags_Password) return 0; return idx > 0 ? (!is_separator(SeekUtf8Buffer(obj, idx - 1).Codepoint) && is_separator(SeekUtf8Buffer(obj, idx).Codepoint)) : 1; }
 static int  STB_TEXTEDIT_MOVEWORDLEFT_IMPL(ImGuiInputTextState* obj, int idx)   { idx--; while (idx >= 0 && !is_word_boundary_from_right(obj, idx)) idx--; return idx < 0 ? 0 : idx; }
 static int  STB_TEXTEDIT_MOVEWORDRIGHT_MAC(ImGuiInputTextState* obj, int idx)   { idx++; int len = obj->CurLenW; while (idx < len && !is_word_boundary_from_left(obj, idx)) idx++; return idx > len ? len : idx; }
 static int  STB_TEXTEDIT_MOVEWORDRIGHT_WIN(ImGuiInputTextState* obj, int idx)   { idx++; int len = obj->CurLenW; while (idx < len && !is_word_boundary_from_right(obj, idx)) idx++; return idx > len ? len : idx; }
@@ -3708,16 +3746,20 @@ static int  STB_TEXTEDIT_MOVEWORDRIGHT_IMPL(ImGuiInputTextState* obj, int idx)  
 
 static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
 {
-    ImWchar* dst = obj->TextW.Data + pos;
+    TextPosData data = SeekUtf8Buffer(obj, pos);
+    char* dst = data.Text;
 
     // We maintain our buffer length in both UTF-8 and wchar formats
+    int remove_bytes = 0;
+    for (int i = 0; i < n; i++)
+        remove_bytes += ImTextCountUtf8BytesFromChar(dst, dst + data.BytesToEOL);
     obj->Edited = true;
-    obj->CurLenA -= ImTextCountUtf8BytesFromStr(dst, dst + n);
+    obj->CurLenA -= remove_bytes;
     obj->CurLenW -= n;
 
     // Offset remaining text (FIXME-OPT: Use memmove)
-    const ImWchar* src = obj->TextW.Data + pos + n;
-    while (ImWchar c = *src++)
+    const char* src = data.Text + remove_bytes;
+    while (char c = *src++)
         *dst++ = c;
     *dst = '\0';
 }
@@ -3725,31 +3767,31 @@ static void STB_TEXTEDIT_DELETECHARS(ImGuiInputTextState* obj, int pos, int n)
 static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const ImWchar* new_text, int new_text_len)
 {
     const bool is_resizable = (obj->Flags & ImGuiInputTextFlags_CallbackResize) != 0;
-    const int text_len = obj->CurLenW;
-    IM_ASSERT(pos <= text_len);
+    const int text_len = obj->CurLenA;
+    IM_ASSERT(pos <= obj->CurLenW);
 
     const int new_text_len_utf8 = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
     if (!is_resizable && (new_text_len_utf8 + obj->CurLenA + 1 > obj->BufCapacityA))
         return false;
 
     // Grow internal buffer if needed
-    if (new_text_len + text_len + 1 > obj->TextW.Size)
-    {
-        if (!is_resizable)
-            return false;
-        IM_ASSERT(text_len < obj->TextW.Size);
-        obj->TextW.resize(text_len + ImClamp(new_text_len * 4, 32, ImMax(256, new_text_len)) + 1);
-    }
+    if (new_text_len_utf8 + text_len + 1 > obj->TextA.Size)
+        obj->TextA.resize(text_len + ImClamp(new_text_len_utf8 * 4, 32, ImMax(256, new_text_len_utf8)) + 1);
 
-    ImWchar* text = obj->TextW.Data;
-    if (pos != text_len)
-        memmove(text + pos + new_text_len, text + pos, (size_t)(text_len - pos) * sizeof(ImWchar));
-    memcpy(text + pos, new_text, (size_t)new_text_len * sizeof(ImWchar));
+    TextPosData data = SeekUtf8Buffer(obj, pos);
+    char* text = data.Text;
+    if (pos != obj->CurLenW)
+        memmove(text + new_text_len_utf8, text, obj->TextA.Data + text_len - text);
+
+    // FIXME-OPT: ImTextStrToUtf8 insists on 0-terminating buffer. Could rework ImTextStrToUtf8 to not do this?
+    char c_bkp = *(text + new_text_len_utf8);
+    ImTextStrToUtf8(text, new_text_len_utf8 + 1, new_text, new_text + new_text_len);
+    *(text + new_text_len_utf8) = c_bkp;
 
     obj->Edited = true;
     obj->CurLenW += new_text_len;
     obj->CurLenA += new_text_len_utf8;
-    obj->TextW[obj->CurLenW] = '\0';
+    obj->TextA[obj->CurLenA] = '\0';
 
     return true;
 }
@@ -3800,6 +3842,57 @@ void ImGuiInputTextState::OnKeyPressed(int key)
     stb_textedit_key(this, &Stb, key);
     CursorFollow = true;
     CursorAnimReset();
+}
+
+void ImGuiInputTextState::ReindexLines()
+{
+    IM_ASSERT(TextA.Size > CurLenA);                    // Always includes at least one byte (\0).
+    LineIndex.resize(0);
+    int char_count = 0;
+    const char* text_begin = TextA.Data;
+    const char* text_end = &text_begin[CurLenA];
+    const char* eol = NULL;
+    const char* ln = text_begin;
+
+    // LineIndex.Size == count('\n') + 1.
+    do
+    {
+        // TextA points to internal buffer therefore this wont read past end of user buffer if it was unterminated.
+        eol = strstr(ln, "\n");
+        const char* ln_end = eol == NULL ? text_end : eol + 1;  // +1 to also include \n.
+        ImGuiLineInfo info;
+        info.ByteOffset = (int)(ln - text_begin);
+        info.ByteLen = ln_end - ln;
+        info.CodepointOffset = char_count;
+        info.CodepointLen = ImTextCountCharsFromUtf8(ln, ln_end);
+        LineIndex.push_back(info);
+        char_count += info.CodepointLen;
+        ln = ln_end;
+    } while (eol != NULL);
+}
+
+ImGuiLineInfo* ImGuiInputTextState::GetLineInfo(int pos) const
+{
+    if (LineIndex.empty())
+        return NULL;
+
+    ImGuiLineInfo* first = LineIndex.Data;
+    int count = LineIndex.Size - 1;
+    while (count > 0)
+    {
+        int count2 = count >> 1;
+        ImGuiLineInfo* mid = first + count2;
+        if (mid->CodepointOffset + mid->CodepointLen <= pos)
+        {
+            first = ++mid;
+            count -= count2 + 1;
+        }
+        else
+        {
+            count = count2;
+        }
+    }
+    return first;
 }
 
 ImGuiInputTextCallbackData::ImGuiInputTextCallbackData()
@@ -4098,11 +4191,12 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         state = &g.InputTextState;
         state->CursorAnimReset();
 
-        // Take a copy of the initial buffer value (both in original UTF-8 format and converted to wchar)
+        // Take a copy of the initial buffer value
         // From the moment we focused we are ignoring the content of 'buf' (unless we are in read-only mode)
-        const int buf_len = (int)strlen(buf);
+        const int buf_len = (int)strnlen(buf, ImMax(buf_size, 1) - 1);
         state->InitialTextA.resize(buf_len + 1);    // UTF-8. we use +1 to make sure that .Data is always pointing to at least an empty string.
-        memcpy(state->InitialTextA.Data, buf, buf_len + 1);
+        memcpy(state->InitialTextA.Data, buf, buf_len);
+        state->InitialTextA.back() = 0;
 
         // Preserve cursor position and undo/redo stack if we come back to same widget
         // FIXME: Since we reworked this on 2022/06, may want to differenciate recycle_cursor vs recycle_undostate?
@@ -4113,11 +4207,12 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // Start edition
         const char* buf_end = NULL;
         state->ID = id;
-        state->TextW.resize(buf_size + 1);          // wchar count <= UTF-8 count. we use +1 to make sure that .Data is always pointing to at least an empty string.
-        state->TextA.resize(0);
-        state->TextAIsValid = false;                // TextA is not valid yet (we will display buf until then)
-        state->CurLenW = ImTextStrFromUtf8(state->TextW.Data, buf_size, buf, NULL, &buf_end);
+        state->CurLenW = ImTextCountCharsFromUtf8(buf, buf + buf_size - 1, &buf_end);
         state->CurLenA = (int)(buf_end - buf);      // We can't get the result from ImStrncpy() above because it is not UTF-8 aware. Here we'll cut off malformed UTF-8.
+        state->TextA.resize(state->CurLenA + 1);
+        memcpy(state->TextA.Data, state->InitialTextA.Data, state->CurLenA);
+        state->TextA.back() = 0;
+        state->ReindexLines();
 
         if (recycle_state)
         {
@@ -4190,15 +4285,14 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (is_readonly && state != NULL && (render_cursor || render_selection))
     {
         const char* buf_end = NULL;
-        state->TextW.resize(buf_size + 1);
-        state->CurLenW = ImTextStrFromUtf8(state->TextW.Data, state->TextW.Size, buf, NULL, &buf_end);
+        state->CurLenW = ImTextCountCharsFromUtf8(buf, buf + buf_size - 1, &buf_end);
         state->CurLenA = (int)(buf_end - buf);
         state->CursorClamp();
         render_selection &= state->HasSelection();
     }
 
     // Select the buffer to render.
-    const bool buf_display_from_state = (render_cursor || render_selection || g.ActiveId == id) && !is_readonly && state && state->TextAIsValid;
+    const bool buf_display_from_state = (render_cursor || render_selection || g.ActiveId == id) && !is_readonly && state;
     const bool is_displaying_hint = (hint != NULL && (buf_display_from_state ? state->TextA.Data : buf)[0] == 0);
 
     // Password pushes a temporary font with only a fallback glyph
@@ -4218,11 +4312,9 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     }
 
     // Process mouse inputs and character inputs
-    int backup_current_text_length = 0;
     if (g.ActiveId == id)
     {
         IM_ASSERT(state != NULL);
-        backup_current_text_length = state->CurLenA;
         state->Edited = false;
         state->BufCapacityA = buf_size;
         state->Flags = flags;
@@ -4416,9 +4508,11 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 const int ib = state->HasSelection() ? ImMin(state->Stb.select_start, state->Stb.select_end) : 0;
                 const int ie = state->HasSelection() ? ImMax(state->Stb.select_start, state->Stb.select_end) : state->CurLenW;
-                const int clipboard_data_len = ImTextCountUtf8BytesFromStr(state->TextW.Data + ib, state->TextW.Data + ie) + 1;
+                // FIXME: calculate utf8 len
+                const int clipboard_data_len = ie - ib + 1;
                 char* clipboard_data = (char*)IM_ALLOC(clipboard_data_len * sizeof(char));
-                ImTextStrToUtf8(clipboard_data, clipboard_data_len, state->TextW.Data + ib, state->TextW.Data + ie);
+                memcpy(clipboard_data, state->TextA.Data + ib, ie - ib);
+                clipboard_data[clipboard_data_len - 1] = 0;
                 SetClipboardText(clipboard_data);
                 MemFree(clipboard_data);
             }
@@ -4435,7 +4529,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             if (const char* clipboard = GetClipboardText())
             {
                 // Filter pasted buffer
-                const int clipboard_len = (int)strlen(clipboard);
+                const int clipboard_len = (int)ImTextCountCharsFromUtf8(clipboard, NULL);
                 ImWchar* clipboard_filtered = (ImWchar*)IM_ALLOC((clipboard_len + 1) * sizeof(ImWchar));
                 int clipboard_filtered_len = 0;
                 for (const char* s = clipboard; *s; )
@@ -4553,10 +4647,10 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     callback_data.BufDirty = false;
 
                     // We have to convert from wchar-positions to UTF-8-positions, which can be pretty slow (an incentive to ditch the ImWchar buffer, see https://github.com/nothings/stb/issues/188)
-                    ImWchar* text = state->TextW.Data;
-                    const int utf8_cursor_pos = callback_data.CursorPos = ImTextCountUtf8BytesFromStr(text, text + state->Stb.cursor);
-                    const int utf8_selection_start = callback_data.SelectionStart = ImTextCountUtf8BytesFromStr(text, text + state->Stb.select_start);
-                    const int utf8_selection_end = callback_data.SelectionEnd = ImTextCountUtf8BytesFromStr(text, text + state->Stb.select_end);
+                    char* text = state->TextA.Data;
+                    const int utf8_cursor_pos = callback_data.CursorPos = ImStb::SeekUtf8Buffer(state, state->Stb.cursor).Text - text;
+                    const int utf8_selection_start = callback_data.SelectionStart = ImStb::SeekUtf8Buffer(state, state->Stb.select_start).Text - text;
+                    const int utf8_selection_end = callback_data.SelectionEnd = ImStb::SeekUtf8Buffer(state, state->Stb.select_end).Text - text;
 
                     // Call user code
                     callback(&callback_data);
@@ -4574,9 +4668,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     {
                         IM_ASSERT(callback_data.BufTextLen == (int)strlen(callback_data.Buf)); // You need to maintain BufTextLen if you change the text!
                         InputTextReconcileUndoStateAfterUserCallback(state, callback_data.Buf, callback_data.BufTextLen); // FIXME: Move the rest of this block inside function and rename to InputTextReconcileStateAfterUserCallback() ?
-                        if (callback_data.BufTextLen > backup_current_text_length && is_resizable)
-                            state->TextW.resize(state->TextW.Size + (callback_data.BufTextLen - backup_current_text_length)); // Worse case scenario resize
-                        state->CurLenW = ImTextStrFromUtf8(state->TextW.Data, state->TextW.Size, callback_data.Buf, NULL);
+                        state->CurLenW = ImTextCountCharsFromUtf8(callback_data.Buf, NULL);
                         state->CurLenA = callback_data.BufTextLen;  // Assume correct length and valid UTF-8 from user, saves us an extra strlen()
                         state->CursorAnimReset();
                     }
@@ -4622,6 +4714,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // If the underlying buffer resize was denied or not carried to the next frame, apply_new_text_length+1 may be >= buf_size.
         ImStrncpy(buf, apply_new_text, ImMin(apply_new_text_length + 1, buf_size));
         value_changed = true;
+        state->ReindexLines();
     }
 
     // Release active ID at the end of the function (so e.g. pressing Return still does a final application of the value)
@@ -4665,58 +4758,41 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // - Handle scrolling, highlight selection, display cursor (those all requires some form of 1d->2d cursor position calculation)
         // - Measure text height (for scrollbar)
         // We are attempting to do most of that in **one main pass** to minimize the computation cost (non-negligible for large amount of text) + 2nd pass for selection rendering (we could merge them by an extra refactoring effort)
-        // FIXME: This should occur on buf_display but we'd need to maintain cursor/select_start/select_end for UTF-8.
-        const ImWchar* text_begin = state->TextW.Data;
+        // FIXME: This should occur on buf_display but it may contain buf, while SeekUtf8Buffer() returns pointer within TextA.
+        const char* text_begin = state->TextA.Data;
         ImVec2 cursor_offset, select_start_offset;
 
         {
-            // Find lines numbers straddling 'cursor' (slot 0) and 'select_start' (slot 1) positions.
-            const ImWchar* searches_input_ptr[2] = { NULL, NULL };
-            int searches_result_line_no[2] = { -1000, -1000 };
-            int searches_remaining = 0;
+            const char* cursor_text_start = NULL;
+            const char* cursor_text_end = NULL;
+            int line_count = state->LineIndex.Size;
+            int selection_start = line_count;       // A cursor position.
+            int selection_end = line_count;         // May be in either side of the cursor.
             if (render_cursor)
             {
-                searches_input_ptr[0] = text_begin + state->Stb.cursor;
-                searches_result_line_no[0] = -1;
-                searches_remaining++;
+                ImStb::TextPosData data = ImStb::SeekUtf8Buffer(state, state->Stb.cursor);
+                cursor_text_start = data.Text;
+                selection_start = data.LineNum + 1; // Cursor position starts at the top of current line and spans until the start of top of next line.
             }
             if (render_selection)
             {
-                searches_input_ptr[1] = text_begin + ImMin(state->Stb.select_start, state->Stb.select_end);
-                searches_result_line_no[1] = -1;
-                searches_remaining++;
+                ImStb::TextPosData data = ImStb::SeekUtf8Buffer(state, ImMin(state->Stb.select_start, state->Stb.select_end));
+                cursor_text_end = data.Text;
+                selection_end = data.LineNum + 1;
             }
 
-            // Iterate all lines to find our line numbers
-            // In multi-line mode, we never exit the loop until all lines are counted, so add one extra to the searches_remaining counter.
-            searches_remaining += is_multiline ? 1 : 0;
-            int line_count = 0;
-            //for (const ImWchar* s = text_begin; (s = (const ImWchar*)wcschr((const wchar_t*)s, (wchar_t)'\n')) != NULL; s++)  // FIXME-OPT: Could use this when wchar_t are 16-bit
-            for (const ImWchar* s = text_begin; *s != 0; s++)
-                if (*s == '\n')
-                {
-                    line_count++;
-                    if (searches_result_line_no[0] == -1 && s >= searches_input_ptr[0]) { searches_result_line_no[0] = line_count; if (--searches_remaining <= 0) break; }
-                    if (searches_result_line_no[1] == -1 && s >= searches_input_ptr[1]) { searches_result_line_no[1] = line_count; if (--searches_remaining <= 0) break; }
-                }
-            line_count++;
-            if (searches_result_line_no[0] == -1)
-                searches_result_line_no[0] = line_count;
-            if (searches_result_line_no[1] == -1)
-                searches_result_line_no[1] = line_count;
-
             // Calculate 2d position by finding the beginning of the line and measuring distance
-            cursor_offset.x = InputTextCalcTextSizeW(ImStrbolW(searches_input_ptr[0], text_begin), searches_input_ptr[0]).x;
-            cursor_offset.y = searches_result_line_no[0] * g.FontSize;
-            if (searches_result_line_no[1] >= 0)
+            cursor_offset.x = InputTextCalcTextSizeA(ImStrbolA(cursor_text_start, text_begin), cursor_text_start).x;
+            cursor_offset.y = (float)selection_start * g.FontSize;
+            if (selection_end >= 0)
             {
-                select_start_offset.x = InputTextCalcTextSizeW(ImStrbolW(searches_input_ptr[1], text_begin), searches_input_ptr[1]).x;
-                select_start_offset.y = searches_result_line_no[1] * g.FontSize;
+                select_start_offset.x = InputTextCalcTextSizeA(ImStrbolA(cursor_text_end, text_begin), cursor_text_end).x;
+                select_start_offset.y = (float)selection_end * g.FontSize;
             }
 
             // Store text height (note that we haven't calculated text width at all, see GitHub issues #383, #1224)
             if (is_multiline)
-                text_size = ImVec2(inner_size.x, line_count * g.FontSize);
+                text_size = ImVec2(inner_size.x, (float)line_count * g.FontSize);
         }
 
         // Scroll
@@ -4758,14 +4834,14 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         const ImVec2 draw_scroll = ImVec2(state->ScrollX, 0.0f);
         if (render_selection)
         {
-            const ImWchar* text_selected_begin = text_begin + ImMin(state->Stb.select_start, state->Stb.select_end);
-            const ImWchar* text_selected_end = text_begin + ImMax(state->Stb.select_start, state->Stb.select_end);
+            const char* text_selected_begin = ImStb::SeekUtf8Buffer(state, ImMin(state->Stb.select_start, state->Stb.select_end)).Text;
+            const char* text_selected_end = ImStb::SeekUtf8Buffer(state, ImMax(state->Stb.select_start, state->Stb.select_end)).Text;
 
             ImU32 bg_color = GetColorU32(ImGuiCol_TextSelectedBg, render_cursor ? 1.0f : 0.6f); // FIXME: current code flow mandate that render_cursor is always true here, we are leaving the transparent one for tests.
             float bg_offy_up = is_multiline ? 0.0f : -1.0f;    // FIXME: those offsets should be part of the style? they don't play so well with multi-line selection.
             float bg_offy_dn = is_multiline ? 0.0f : 2.0f;
             ImVec2 rect_pos = draw_pos + select_start_offset - draw_scroll;
-            for (const ImWchar* p = text_selected_begin; p < text_selected_end; )
+            for (const char* p = text_selected_begin; p < text_selected_end; )
             {
                 if (rect_pos.y > clip_rect.w + g.FontSize)
                     break;
@@ -4774,12 +4850,16 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     //p = (const ImWchar*)wmemchr((const wchar_t*)p, '\n', text_selected_end - p);  // FIXME-OPT: Could use this when wchar_t are 16-bit
                     //p = p ? p + 1 : text_selected_end;
                     while (p < text_selected_end)
-                        if (*p++ == '\n')
+                    {
+                        unsigned int c;
+                        p += ImTextCharFromUtf8(&c, p, text_selected_end);
+                        if (c == '\n')
                             break;
+                    }
                 }
                 else
                 {
-                    ImVec2 rect_size = InputTextCalcTextSizeW(p, text_selected_end, &p, NULL, true);
+                    ImVec2 rect_size = InputTextCalcTextSizeA(p, text_selected_end, &p, NULL, true);
                     if (rect_size.x <= 0.0f) rect_size.x = IM_FLOOR(g.Font->GetCharAdvance((ImWchar)' ') * 0.50f); // So we can see selected empty lines
                     ImRect rect(rect_pos + ImVec2(0.0f, bg_offy_up - g.FontSize), rect_pos + ImVec2(rect_size.x, bg_offy_dn));
                     rect.ClipWith(clip_rect);
@@ -4821,7 +4901,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     {
         // Render text only (no selection, no cursor)
         if (is_multiline)
-            text_size = ImVec2(inner_size.x, InputTextCalcTextLenAndLineCount(buf_display, &buf_display_end) * g.FontSize); // We don't need width
+            text_size = ImVec2(inner_size.x, (float)InputTextCalcTextLenAndLineCount(buf_display, &buf_display_end) * g.FontSize); // We don't need width
         else if (!is_displaying_hint && g.ActiveId == id)
             buf_display_end = buf_display + state->CurLenA;
         else if (!is_displaying_hint)
