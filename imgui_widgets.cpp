@@ -4592,8 +4592,25 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             // Cut, Copy
             if (io.SetClipboardTextFn)
             {
-                const int ib = state->HasSelection() ? ImMin(state->Stb.select_start, state->Stb.select_end) : 0;
-                const int ie = state->HasSelection() ? ImMax(state->Stb.select_start, state->Stb.select_end) : state->CurLenW;
+                int ib = ImMin(state->Stb.select_start, state->Stb.select_end);
+                int ie = ImMax(state->Stb.select_start, state->Stb.select_end);
+                if (!state->HasSelection())
+                {
+                    if (is_multiline)
+                    {
+                        ImGuiInputTextCharInfo char_data = InputTextGetCharInfo(state, ib);
+                        ImGuiInputTextLineInfo* line_data = char_data.LineInfo;
+                        ib = line_data->CodepointOffset;
+                        ie = line_data->CodepointOffset + line_data->CodepointLen;
+                        if (char_data.LineNum < state->LinesIndex.Size - 1)
+                            ie -= 1;    // If this line is not the last, it contains \n, ignore it.
+                    }
+                    else
+                    {
+                        ib = 0;
+                        ie = state->CurLenW;
+                    }
+                }
                 ImGuiInputTextCharInfo selected_begin = InputTextGetCharInfo(state, ib);
                 ImGuiInputTextCharInfo selected_end = InputTextGetCharInfo(state, ie);
                 ImVector<char> clipboard_data;
