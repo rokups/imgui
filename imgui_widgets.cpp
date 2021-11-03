@@ -3860,7 +3860,7 @@ static void    STB_TEXTEDIT_LAYOUTROW(StbTexteditRow* r, ImGuiInputTextState* ob
     r->num_chars = data.LineInfo->CodepointLen;
 }
 
-static int    STB_TEXTEDIT_CHARTOBOL(ImGuiInputTextState* obj, int idx, float* y, StbTexteditRow* r)
+static int    STB_TEXTEDIT_LAYOUTROW_FAST(StbTexteditRow* r, ImGuiInputTextState* obj, int idx, float* y)
 {
     // This code is not entirely correct as it operates under assumption that text has uniform distance between lines.
     // Rich text would have to loop all the lines, calculating their heights.
@@ -3876,6 +3876,7 @@ static int    STB_TEXTEDIT_CHARTOBOL(ImGuiInputTextState* obj, int idx, float* y
     }
     return line_data->CodepointOffset;
 }
+#define STB_TEXTEDIT_LAYOUTROW_EX STB_TEXTEDIT_LAYOUTROW_FAST
 
 // When ImGuiInputTextFlags_Password is set, we don't want actions such as CTRL+Arrow to leak the fact that underlying data are blanks or separators.
 static bool is_separator(unsigned int c)                                        { return ImCharIsBlankW(c) || c==',' || c==';' || c=='(' || c==')' || c=='{' || c=='}' || c=='[' || c==']' || c=='|' || c=='\n' || c=='\r'; }

@@ -173,6 +173,10 @@
 //    STB_TEXTEDIT_K_LINEEND2            secondary keyboard input to move cursor to end of line
 //    STB_TEXTEDIT_K_TEXTSTART2          secondary keyboard input to move cursor to start of text
 //    STB_TEXTEDIT_K_TEXTEND2            secondary keyboard input to move cursor to end of text
+//    STB_TEXTEDIT_LAYOUTROW_EX(r,str,i,&y) return index of line at char i, if r != NULL layout row
+//                                          containing char i, if y != NULL set y coordinate of row
+//                                          containing char i.
+//
 //
 // Keyboard input must be encoded as a single integer value; e.g. a character code
 // and some bitflags that represent shift states. to simplify the interface, SHIFT must
@@ -517,70 +521,32 @@ typedef struct
 
 // find the x/y location of a character, and remember info about the previous row in
 // case we get a move-up event (for page up, we'll have to rescan)
-static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *str, int n, int single_line)
+static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *str, int n)
 {
    StbTexteditRow r;
    int prev_start = 0;
-   //int z = STB_TEXTEDIT_STRINGLEN(str);
    int i=0, first;
-
-   /*
-   if (n == z) {
-      // if it's at the end, then find the last line -- simpler than trying to
-      // explicitly handle this case in the regular code
-      if (single_line) {
-         STB_TEXTEDIT_LAYOUTROW(&r, str, 0);
-         find->y = 0;
-         find->first_char = 0;
-         find->length = z;
-         find->height = r.ymax - r.ymin;
-         find->x = r.x1;
-      } else {
-         find->y = 0;
-         find->x = 0;
-         find->height = 1;
-         while (i < z) {
-            STB_TEXTEDIT_LAYOUTROW(&r, str, i);
-            prev_start = i;
-            i += r.num_chars;
-         }
-         find->first_char = i;
-         find->length = 0;
-         find->prev_first = prev_start;
-      }
-      return;
-   }
-   */
 
    // search rows to find the one that straddles character n
    find->y = 0;
 
-   // [DEAR IMGUI]
-   // Efficient way to find target line and line before that. It avoid looping all lines, which is very very slow for
-   // extremely large amount of text.
-   (void)single_line;
-   i = STB_TEXTEDIT_CHARTOBOL(str, n, &find->y, &r);
-   prev_start = i ? STB_TEXTEDIT_CHARTOBOL(str, i - 1, NULL, NULL) : 0;
-
-   /*
+#ifdef STB_TEXTEDIT_LAYOUTROW_EX
+   // A way for user to override row layouting and implement retrieval start of the line and row layoutting more efficiently.
+   i = STB_TEXTEDIT_LAYOUTROW_EX(&r, str, n, &find->y);
+   prev_start = i ? STB_TEXTEDIT_LAYOUTROW_EX(NULL, str, i - 1, NULL) : 0;
+#else
+   // Default implementation. Not very efficient when editing huge text buffer.
+   first = n == 0 || STB_TEXTEDIT_GETCHAR(str, n - 1) == STB_TEXTEDIT_NEWLINE;
    for(;;) {
       STB_TEXTEDIT_LAYOUTROW(&r, str, i);
-      if (n < i + r.num_chars)
+      // Use < when n is not a first or is a last char of the line, and <= otherwise
+      if (n < i + r.num_chars + !first + (r.num_chars == 0))
          break;
-
-      // [DEAR IMGUI]
-      // Implement cursor navigation from the last line. It also correctly handles cursor navigation from the end of
-      // last line, unlike original implementation.
-      if (n == i + r.num_chars && STB_TEXTEDIT_GETCHAR(str, n - 1) != STB_TEXTEDIT_NEWLINE)
-         break;
-      if (r.num_chars == 0)
-         break;
-
       prev_start = i;
       i += r.num_chars;
       find->y += r.baseline_y_delta;
    }
-   */
+#endif
 
    find->first_char = first = i;
    find->length = r.num_chars;
@@ -899,7 +865,7 @@ retry:
 
          // compute current position of cursor point
          stb_textedit_clamp(str, state);
-         stb_textedit_find_charpos(&find, str, state->cursor, state->single_line);
+         stb_textedit_find_charpos(&find, str, state->cursor);
 
          for (j = 0; j < row_count; ++j) {
             float x, goal_x = state->has_preferred_x ? state->preferred_x : find.x;
@@ -966,7 +932,7 @@ retry:
 
          // compute current position of cursor point
          stb_textedit_clamp(str, state);
-         stb_textedit_find_charpos(&find, str, state->cursor, state->single_line);
+         stb_textedit_find_charpos(&find, str, state->cursor);
 
          for (j = 0; j < row_count; ++j) {
             float  x, goal_x = state->has_preferred_x ? state->preferred_x : find.x;
