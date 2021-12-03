@@ -4190,6 +4190,7 @@ void ImGui::UpdateMouseWheel()
     if (g.IO.KeyCtrl)
         return;
 
+    // FIXME: Scrolling logic copied to InputTextEx().
     // As a standard behavior holding SHIFT while using Vertical Mouse Wheel triggers Horizontal scroll instead
     // (we avoid doing it on OSX as it the OS input layer handles this already)
     const bool swap_axis = g.IO.KeyShift && !g.IO.ConfigMacOSXBehaviors;
