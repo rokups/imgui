@@ -1008,6 +1008,7 @@ struct IMGUI_API ImGuiInputTextState
     int                     BufCapacityA;           // end-user buffer capacity
     ImVec2                  Scroll;                 // scrolling/offset
     float                   TextSizeY;              // vertical text size (multiline-only)
+    bool                    UserScrollActive;       // user is interacting with a scrollbar (multiline-only)
     ImStb::STB_TexteditState Stb;                   // state for stb_textedit.h
     float                   CursorAnim;             // timer for cursor blink, reset on every user action so the cursor reappears immediately
     bool                    CursorFollow;           // set when we want scrolling to follow the current cursor position (not always!)

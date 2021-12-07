@@ -3996,6 +3996,27 @@ static bool FrameScrollbar(ImGuiID scrollbar_id, ImGuiAxis axis, ImRect frame_bb
     return g.ActiveId == scrollbar_id;
 }
 
+// Draw a scrollbar over frame rect, but pretend "fake_id" is active when interacting with the scrollbar. Faking an ID is not entirely trivial.
+// Since "ActiveID" is replaced, we can no longer detect whether user is interacting with the scrollbar or with real owner of "fake_id".
+// It is necessary to keep track of which widget is interacted with on the side of caller and "is_active" should be set to "true" when
+// "ActiveID == fake_id" __and__ user interacted with the scrollbar (i.e. call to this function returned "true" on previous frame).
+static bool FrameScrollbarWithFakeID(ImGuiID scrollbar_id, ImGuiID fake_id, bool is_active, ImGuiAxis axis, ImRect frame_bb, float* scroll, float scroll_max)
+{
+    ImGuiContext& g = *GImGui;
+    if (is_active)
+        g.ActiveId = g.LastActiveId = g.HoveredId = scrollbar_id;
+    bool result = FrameScrollbar(scrollbar_id, axis, frame_bb, scroll, scroll_max);
+    if (result)
+    {
+        // Interacting with a scrollbar. Change ActiveId back to widget id.
+        g.ActiveId = g.HoveredId = fake_id;
+        if (g.LastActiveId == scrollbar_id)
+            g.LastActiveId = fake_id;
+        ImGui::KeepAliveID(fake_id);
+    }
+    return result;
+}
+
 // Edit a string of text
 // - buf_size account for the zero-terminator, so a buf_size of 6 can hold "Hello" but not "Hello!".
 //   This is so we can easily call InputText() on static arrays using ARRAYSIZE() and to match
@@ -4046,6 +4067,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
     // Persistent storage of scrollbar data.
     float scroll_y = 0;
+    bool user_scroll_active = false;
+    bool user_scroll_finish = false;
     ImGuiID prev_active_id = g.ActiveId;    // Scrollbars will override active ID
 
     ImGuiItemStatusFlags item_status_flags = 0;
@@ -4067,10 +4090,29 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // be stored in scroll_data for next frame to access it.
         if (has_scrollbar)
         {
-            scroll_y = state ? state->Scroll.y : 0;
-            FrameScrollbar(scrollbar_id, ImGuiAxis_Y, frame_bb, &scroll_y, text_size_y);
-            if (g.ActiveId == scrollbar_id)
-                g.LastItemData.ID = scrollbar_id;   // Scrollbar has ID, but does not modify LastItemData. This makes IsItemActive() work during scrollbar interactions.
+            // Interacting with a scrollbar. Revert ActiveId to that of a scrollbar.
+            if (state)
+            {
+                user_scroll_active = state->UserScrollActive && g.ActiveId == id;
+                scroll_y = state->Scroll.y;
+            }
+
+            if (FrameScrollbarWithFakeID(scrollbar_id, id, user_scroll_active, ImGuiAxis_Y, frame_bb, &scroll_y, text_size_y))
+            {
+                // Interacting with scrollbar itself, while ActiveID is set to widget id.
+                user_scroll_active = true;
+            }
+            else if (user_scroll_active)
+            {
+                // Scrollbar was deactivated. Reactivate text widget.
+                user_scroll_active = false;
+                user_scroll_finish = true;
+            }
+
+            // Store scrollbar state in a persistent storage, because there is no way to know whether we were
+            // interacting with a scrollbar or with a widget itself as now they share same ID.
+            if (state)
+                state->UserScrollActive = user_scroll_active;
         }
         PushClipRect(inner_bb.Min, inner_bb.Max, true);
     }
@@ -4092,8 +4134,6 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     bool input_is_active = state != NULL;
 
     const bool user_clicked = hovered && io.MouseClicked[0];
-    const bool user_scroll_finish = is_multiline && g.ActiveId == 0 && g.ActiveIdPreviousFrame == scrollbar_id;
-    const bool user_scroll_active = is_multiline && g.ActiveId == scrollbar_id;
     bool clear_active_id = false;
     bool select_all = false;
 
@@ -4295,7 +4335,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 state->CursorAnimReset();
             }
         }
-        else if (io.MouseDown[0] && !state->SelectedAllMouseLock && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))
+        else if (io.MouseDown[0] && !state->SelectedAllMouseLock && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f) && !state->UserScrollActive)
         {
             stb_textedit_drag(state, &state->Stb, mouse_x, mouse_y);
             state->CursorAnimReset();
