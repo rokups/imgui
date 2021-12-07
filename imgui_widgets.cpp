@@ -4041,6 +4041,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
     // Persistent storage of scrollbar data.
     float scroll_y = 0;
+    bool user_scroll_active = false;
+    bool user_scroll_finish = false;
     ImGuiID prev_active_id = g.ActiveId;    // Scrollbars will override active ID
 
     ImGuiItemStatusFlags item_status_flags = 0;
@@ -4066,13 +4068,35 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         float size_avail = scroll_bb.GetHeight();
         if (has_scrollbar)
         {
+            // Interacting with a scrollbar. Revert ActiveId to that of a scrollbar.
+            user_scroll_active = state->UserScrollActive && g.ActiveId == id;
+            if (user_scroll_active)
+                g.ActiveId = g.LastActiveId = g.HoveredId = scrollbar_id;
+
             scroll_y = state->ScrollY;
             ImS64 int_scroll_y = (ImS64)scroll_y;
             ScrollbarEx(scroll_bb, scrollbar_id, ImGuiAxis_Y, &int_scroll_y, size_avail, state->TextSizeY + style.FramePadding.y * 2.0f, 0);
-            KeepAliveID(scrollbar_id);
             scroll_y = (float)int_scroll_y;
             if (g.ActiveId == scrollbar_id)
-                g.LastItemData.ID = scrollbar_id;   // Scrollbar has ID, but does not modify LastItemData. This makes IsItemActive() work during scrollbar interactions.
+            {
+                // Interacting with a scrollbar. Change ActiveId back to widget id.
+                user_scroll_active = true;
+                g.ActiveId = g.HoveredId = id;
+                if (g.LastActiveId == scrollbar_id)
+                    g.LastActiveId = id;
+                KeepAliveID(id);
+            }
+            else if (user_scroll_active)
+            {
+                // Scrollbar was deactivated. Reactivate text widget.
+                user_scroll_active = false;
+                user_scroll_finish = true;
+            }
+
+            // Store scrollbar state in a persistent storage, because there is no way to know whether we were interacting
+            // with a scrollbar or with a widget itself as now they share same ID.
+            state->UserScrollActive = user_scroll_active;
+
             if (g.HoveredWindow == window && frame_bb.Contains(g.IO.MousePos))
             {
                 // FIXME: Scrolling logic copied from UpdateMouseWheel().
@@ -4106,8 +4130,6 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     bool input_is_active = g.InputTextState != NULL && g.InputTextState->ID == id;
 
     const bool user_clicked = hovered && io.MouseClicked[0];
-    const bool user_scroll_finish = is_multiline && g.ActiveId == 0 && g.ActiveIdPreviousFrame == scrollbar_id;
-    const bool user_scroll_active = is_multiline && g.ActiveId == scrollbar_id;
     bool clear_active_id = false;
     bool select_all = false;
 
@@ -4308,7 +4330,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 state->CursorAnimReset();
             }
         }
-        else if (io.MouseDown[0] && !state->SelectedAllMouseLock && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))
+        else if (io.MouseDown[0] && !state->SelectedAllMouseLock && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f) && !state->UserScrollActive)
         {
             stb_textedit_drag(state, &state->Stb, mouse_x, mouse_y);
             state->CursorAnimReset();
