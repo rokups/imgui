@@ -3998,6 +3998,12 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (window->SkipItems)
         return false;
 
+    // Test:
+    // * Cursor pos after widget
+    // * Mouse clicks placing cursor (may be tested already)
+    // * Min scroll amount of vertical vs horizontal
+    // * There’s one failing test you may want to add (under BROKEN) , currently editing a field then clicking scrollbar, some of the wrong IsItemXXX stuff activate (can be seen in demo) for one frame while changing id
+
     IM_ASSERT(buf != NULL && buf_size >= 0);
     IM_ASSERT(!((flags & ImGuiInputTextFlags_CallbackHistory) && (flags & ImGuiInputTextFlags_Multiline)));        // Can't use both together (they both use up/down keys)
     IM_ASSERT(!((flags & ImGuiInputTextFlags_CallbackCompletion) && (flags & ImGuiInputTextFlags_AllowTabInput))); // Can't use both together (they both use tab key)
