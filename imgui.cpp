@@ -6350,7 +6350,8 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
     }
 
     // Parent window is latched only on the first call to Begin() of the frame, so further append-calls can be done from a different window stack
-    ImGuiWindow* parent_window_in_stack = window->DockIsActive ? window->DockNode->HostWindow : g.CurrentWindowStack.empty() ? NULL : g.CurrentWindowStack.back().Window;
+    ImGuiWindow* parent_window_in_begin_stack = g.CurrentWindowStack.empty() ? NULL : g.CurrentWindowStack.back().Window;
+    ImGuiWindow* parent_window_in_stack = window->DockIsActive ? window->DockNode->HostWindow : parent_window_in_begin_stack;
     ImGuiWindow* parent_window = first_begin_of_the_frame ? ((flags & (ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Popup)) ? parent_window_in_stack : NULL) : window->ParentWindow;
     IM_ASSERT(parent_window != NULL || !(flags & ImGuiWindowFlags_ChildWindow));
 
@@ -6380,7 +6381,7 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
     if (first_begin_of_the_frame)
     {
         UpdateWindowParentAndRootLinks(window, flags, parent_window);
-        window->ParentWindowInBeginStack = parent_window_in_stack;
+        window->ParentWindowInBeginStack = parent_window_in_begin_stack;
     }
 
     // Process SetNextWindow***() calls
@@ -7443,6 +7444,21 @@ bool ImGui::IsWindowWithinBeginStackOf(ImGuiWindow* window, ImGuiWindow* potenti
         window = window->ParentWindowInBeginStack;
     }
     return false;
+}
+
+bool ImGui::IsDockedWindowsWithinBeginStackOf(ImGuiWindow* window, ImGuiWindow* potential_parent)
+{
+    IM_ASSERT(potential_parent->DockId == 0);   // potential_parent must be undocked.
+    if (window->DockNodeAsHost)
+    {
+        for (int i = 0; i < IM_ARRAYSIZE(window->DockNodeAsHost->ChildNodes); i++)
+            if (ImGuiDockNode* dock_node = window->DockNodeAsHost->ChildNodes[i])
+                for (int j = 0; j < dock_node->Windows.Size; j++)
+                    if (!IsDockedWindowsWithinBeginStackOf(dock_node->Windows[j], potential_parent))
+                        return false;
+        return true;
+    }
+    return IsWindowWithinBeginStackOf(window, potential_parent);
 }
 
 bool ImGui::IsWindowAbove(ImGuiWindow* potential_above, ImGuiWindow* potential_below)
@@ -9218,7 +9234,7 @@ void ImGui::ClosePopupsOverWindow(ImGuiWindow* ref_window, bool restore_focus_to
             bool ref_window_is_descendent_of_popup = false;
             for (int n = popup_count_to_keep; n < g.OpenPopupStack.Size; n++)
                 if (ImGuiWindow* popup_window = g.OpenPopupStack[n].Window)
-                    if (IsWindowWithinBeginStackOf(ref_window->RootWindowDockTree, popup_window->RootWindowDockTree))
+                    if (IsDockedWindowsWithinBeginStackOf(ref_window->RootWindowDockTree, popup_window->RootWindow))
                     {
                         ref_window_is_descendent_of_popup = true;
                         break;
@@ -14872,8 +14888,22 @@ static void ImGui::DockNodeRemoveTabBar(ImGuiDockNode* node)
 
 static bool DockNodeIsDropAllowedOne(ImGuiWindow* payload, ImGuiWindow* host_window)
 {
+    ImGuiContext& g = *GImGui;
+
     if (host_window->DockNodeAsHost && host_window->DockNodeAsHost->IsDockSpace() && payload->BeginOrderWithinContext < host_window->BeginOrderWithinContext)
         return false;
+
+    // This could be a simpler and more elegant solution provided required pieces existed. Here we assume hypothetical "RootWindowPopup"
+    // points to a first popup in begin-stack of payload. Not to be confused with "RootWindowPopupTree", which only points to immediate
+    // parent popup in begin-stack only if window containing this property is also a popup.
+    //if (payload->RootWindowPopup != NULL && !ImGui::IsWindowWithinBeginStackOf(host_window, payload->RootWindowPopup))
+    //    return false;
+    if (g.OpenPopupStack.Size > 0)
+        for (int i = g.OpenPopupStack.Size - 1; i >= 0; i--)
+            if (ImGuiPopupData* popup_data = &g.OpenPopupStack[i])
+                if (ImGui::IsDockedWindowsWithinBeginStackOf(payload, popup_data->Window))          // Payload is created from a popup's begin stack.
+                    if (!ImGui::IsDockedWindowsWithinBeginStackOf(host_window, popup_data->Window)) // Docking it to windows outside of popup's begin stack
+                        return false;                                                               // would make it impossible to interact with.
 
     ImGuiWindowClass* host_class = host_window->DockNodeAsHost ? &host_window->DockNodeAsHost->WindowClass : &host_window->WindowClass;
     ImGuiWindowClass* payload_class = &payload->WindowClass;
@@ -14892,7 +14922,7 @@ static bool DockNodeIsDropAllowedOne(ImGuiWindow* payload, ImGuiWindow* host_win
 static bool ImGui::DockNodeIsDropAllowed(ImGuiWindow* host_window, ImGuiWindow* root_payload)
 {
     if (root_payload->DockNodeAsHost && root_payload->DockNodeAsHost->IsSplitNode())
-        return true;
+        return DockNodeIsDropAllowedOne(root_payload, host_window);
 
     const int payload_count = root_payload->DockNodeAsHost ? root_payload->DockNodeAsHost->Windows.Size : 1;
     for (int payload_n = 0; payload_n < payload_count; payload_n++)
