@@ -4790,6 +4790,10 @@ static void AddWindowToDrawData(ImGuiWindow* window, int layer)
 {
     ImGuiContext& g = *GImGui;
     ImGuiViewportP* viewport = window->Viewport;
+
+    if (window->NoAddDrawData)
+        return;
+
     g.IO.MetricsRenderWindows++;
     if (window->Flags & ImGuiWindowFlags_DockNodeHost)
         window->DrawList->ChannelsMerge();
@@ -5117,9 +5121,28 @@ void ImGui::Render()
     }
 
     // Add ImDrawList to render
-    ImGuiWindow* windows_to_render_top_most[2];
-    windows_to_render_top_most[0] = (g.NavWindowingTarget && !(g.NavWindowingTarget->Flags & ImGuiWindowFlags_NoBringToFrontOnFocus)) ? g.NavWindowingTarget->RootWindowDockTree : NULL;
-    windows_to_render_top_most[1] = (g.NavWindowingTarget ? g.NavWindowingListWindow : NULL);
+    ImGuiWindow* windows_to_render_top_most[2] = { NULL, NULL };
+    if (g.NavWindowingTarget)
+    {
+        if (!(g.NavWindowingTarget->Flags & ImGuiWindowFlags_NoBringToFrontOnFocus))
+        {
+            ImGuiDockNode* root_node = g.NavWindowingTarget->DockNode;
+            while (root_node && root_node->ParentNode)
+                root_node = root_node->ParentNode;
+
+            if (root_node && root_node->IsDockSpace())
+            {
+                windows_to_render_top_most[0] = g.NavWindowingTarget;   // Rendering entire dockspace on top would hide other windows
+                windows_to_render_top_most[0]->NoAddDrawData = true;
+            }
+            else
+            {
+                windows_to_render_top_most[0] = g.NavWindowingTarget->RootWindowDockTree;
+            }
+        }
+        windows_to_render_top_most[1] = g.NavWindowingListWindow;
+    }
+
     for (int n = 0; n != g.Windows.Size; n++)
     {
         ImGuiWindow* window = g.Windows[n];
@@ -5129,7 +5152,10 @@ void ImGui::Render()
     }
     for (int n = 0; n < IM_ARRAYSIZE(windows_to_render_top_most); n++)
         if (windows_to_render_top_most[n] && IsWindowActiveAndVisible(windows_to_render_top_most[n])) // NavWindowingTarget is always temporarily displayed as the top-most window
+        {
+            windows_to_render_top_most[n]->NoAddDrawData = false;
             AddRootWindowToDrawData(windows_to_render_top_most[n]);
+        }
 
     // Draw modal/window whitening backgrounds
     if (first_render_of_frame)

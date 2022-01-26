@@ -349,6 +349,7 @@ Docking+Viewports Branch:
   drag and drop situations rather that relying on it everywhere.
 - Viewports: Fixed a CTRL+TAB crash with viewports enabled when the window list needs to appears in
   its own viewport (regression from 1.86). (#4023, #787)
+- Viewports: Fixed dockspace hiding undocked windows when navigating through CTRL+TAB. [@rokups]
 - Viewports: Fixed active InputText() from preventing viewports to merge. (#4212)
 - Backends: SDL: Added support for ImGuiBackendFlags_HasMouseHoveredViewport now that its specs have been lowered.
 - (Breaking) Removed ImGuiPlatformIO::Platform_SetImeInputPos() in favor of newly standardized
