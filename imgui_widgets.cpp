@@ -3839,7 +3839,7 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, cons
 
         // Contrary to STB_TEXTEDIT_INSERTCHARS() this is working in the UTF8 buffer, hence the mildly similar code (until we remove the U16 buffer altogether!)
         ImGuiContext& g = *GImGui;
-        ImGuiInputTextState* edit_state = &g.InputTextState;
+        ImGuiInputTextState* edit_state = g.InputTextState;
         IM_ASSERT(edit_state->ID != 0 && g.ActiveId == edit_state->ID);
         IM_ASSERT(Buf == edit_state->TextA.Data);
         int new_buf_size = BufTextLen + ImClamp(new_text_len * 4, 32, ImMax(256, new_text_len)) + 1;
@@ -4095,7 +4095,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if ((init_state && g.ActiveId != id) || init_changed_specs)
     {
         // Access state even if we don't own it yet.
-        state = &g.InputTextState;
+        state = g.InputTextState = window->InputTextStorage.GetOrAddByKey(id);
         state->CursorAnimReset();
 
         // Take a copy of the initial buffer value (both in original UTF-8 format and converted to wchar)

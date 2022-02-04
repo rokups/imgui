@@ -4633,7 +4633,6 @@ void ImGui::Shutdown()
 
     g.ClipboardHandlerData.clear();
     g.MenusIdSubmittedThisFrame.clear();
-    g.InputTextState.ClearFreeMemory();
 
     g.SettingsWindows.clear();
     g.SettingsHandlers.clear();
