@@ -102,6 +102,7 @@ struct ImGui_ImplSDL2_Data
     char*           ClipboardTextData;
     bool            MouseCanUseGlobalState;
     bool            UseVulkan;
+    int             UseGlobalMousePosFrames;
 
     ImGui_ImplSDL2_Data()   { memset((void*)this, 0, sizeof(*this)); }
 };
@@ -278,6 +279,18 @@ bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event* event)
                 SDL_GetWindowPosition(SDL_GetWindowFromID(event->motion.windowID), &window_x, &window_y);
                 mouse_pos.x += window_x;
                 mouse_pos.y += window_y;
+
+#if __linux__   // X11 incorrectly reports mouse position in SDL_MOUSEMOTION when window is being moved using SDL_SetWindowPosition.
+                // Global mouse position does not suffer from these inaccuracies therefore we switch to using that while viewport window is being dragged.
+                // This workaround is used only in a limited capacity as use of global positions would interfere with event trickling when frame rate is low.
+                if (bd->UseGlobalMousePosFrames && strcmp(SDL_GetCurrentVideoDriver(), "x11") == 0)
+                {
+                    int mouse_x, mouse_y;
+                    SDL_GetGlobalMouseState(&mouse_x, &mouse_y);
+                    mouse_pos.x = (float)mouse_x;
+                    mouse_pos.y = (float)mouse_y;
+                }
+#endif  // __linux__
             }
             io.AddMousePosEvent(mouse_pos.x, mouse_pos.y);
             return true;
@@ -686,6 +699,9 @@ void ImGui_ImplSDL2_NewFrame()
         io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
     }
 
+    if (bd->UseGlobalMousePosFrames > 0)
+        bd->UseGlobalMousePosFrames--;
+
     ImGui_ImplSDL2_UpdateMouseData();
     ImGui_ImplSDL2_UpdateMouseCursor();
 
@@ -819,6 +835,8 @@ static ImVec2 ImGui_ImplSDL2_GetWindowPos(ImGuiViewport* viewport)
 static void ImGui_ImplSDL2_SetWindowPos(ImGuiViewport* viewport, ImVec2 pos)
 {
     ImGui_ImplSDL2_ViewportData* vd = (ImGui_ImplSDL2_ViewportData*)viewport->PlatformUserData;
+    ImGui_ImplSDL2_Data* bd = ImGui_ImplSDL2_GetBackendData();
+    bd->UseGlobalMousePosFrames = 3;
     SDL_SetWindowPosition(vd->Window, (int)pos.x, (int)pos.y);
 }
 
