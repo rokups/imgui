@@ -4,6 +4,7 @@
 // Read online: https://github.com/ocornut/imgui/tree/master/docs
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_sdl.h"
 #include "imgui_impl_opengl3.h"
 #include <stdio.h>
@@ -14,9 +15,35 @@
 #include <SDL_opengl.h>
 #endif
 
+#if TRACY_ENABLE
+#include <Tracy.hpp>
+#endif
+
 // Main code
 int main(int, char**)
 {
+    ImGuiKeyLut lut;
+
+    for (ImGuiKey k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; k++)
+    {
+        char name[30];
+        strcpy(name, ImGui::GetKeyName(k));
+        lut.Add(k, name);
+        strcat(name, "-2");
+        lut.Add(k, name);
+    }
+
+    for (ImGuiKey k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; k++)
+    {
+        //if (k == ImGuiKey_F2)
+        //    IM_DEBUG_BREAK();
+        char name[30];
+        strcpy(name, ImGui::GetKeyName(k));
+        IM_ASSERT(lut.Get(name) == k);
+        strcat(name, "-2");
+        IM_ASSERT(lut.Get(name) == k);
+    }
+
     // Setup SDL
     // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
     // depending on whether SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to latest version of SDL is recommended!)
@@ -156,6 +183,26 @@ int main(int, char**)
             ImGui::End();
         }
 
+        for (int i = 0; i < 100; i++)
+        {
+            for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; k++)
+            {
+                char name[30];
+                strcpy(name, ImGui::GetKeyName(k));
+                lut.Get(name);
+                strcat(name, "2");
+                lut.Get(name);
+            }
+            for (int k = ImGuiKey_NamedKey_END - 1; k >= ImGuiKey_NamedKey_BEGIN; k--)
+            {
+                char name[30];
+                strcpy(name, ImGui::GetKeyName(k));
+                lut.Get(name);
+                strcat(name, "-2");
+                lut.Get(name);
+            }
+        }
+
         // Rendering
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
@@ -163,6 +210,9 @@ int main(int, char**)
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow(window);
+#if TRACY_ENABLE
+        FrameMark;
+#endif
     }
 
     // Cleanup
