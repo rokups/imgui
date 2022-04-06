@@ -2729,6 +2729,93 @@ bool ImGuiListClipper::Step()
 }
 
 //-----------------------------------------------------------------------------
+// [SECTION] ImGuiKeyLut
+//-----------------------------------------------------------------------------
+#define ImGuiKeyLutEntry_CharToIndex(c)     (((c) >= 'a' ? (c) - ('a' - 'A') : (c)) - '!')
+#define ImGuiKeyLutEntry_Next(e)            ((ImGuiKeyLutEntry*)((ImU8*)(e) + sizeof(ImGuiKeyLutEntry) + e->StrLen))
+
+struct ImGuiKeyLutEntry
+{
+    ImU8            Key;                                                // ImGuiKey - ImGuiKey_NamedKey_BEGIN
+    ImU8            StrLen;
+    char* str()     { return (char*)this + sizeof(ImGuiKeyLutEntry); }  // Not 0-terminated!
+};
+
+void ImGuiKeyLut::Add(ImGuiKey key, const char* name)
+{
+    IM_ASSERT(name != NULL);
+    IM_ASSERT(ImGuiKey_NamedKey_BEGIN <= key && key < ImGuiKey_NamedKey_END);
+    int index = ImGuiKeyLutEntry_CharToIndex(name[0]);
+    auto* entry = &Entries[index];
+    if (name[0] && !name[1])
+    {
+        entry->SingleCharKey = key;
+        return;
+    }
+
+    //For sake of simplicity structs are initialized to 0. Unfortunately 0 is a valid value of MultiCharOffset,
+    // therefore FirstChar is kept as a helper field to help determine whether 'entry' is initialized or not.
+    const bool is_new_str_entry = entry->MultiCharOffset == 0 && FirstChar != name[0];
+    int name_len = strlen(name) - 1;    // Excludes the first character
+    int str_entry_size = sizeof(ImGuiKeyLutEntry) + name_len;
+    int alloc_size = str_entry_size + (is_new_str_entry ? 1 : 0);  // First time also allocates extra byte for entry count
+    while (Buffer.Capacity < Buffer.Size + alloc_size)
+    {
+        Buffer.reserve(Buffer._grow_capacity(Buffer.Size + alloc_size));
+        memset(Buffer.end(), 0, Buffer.Capacity - Buffer.Size);
+    }
+
+    if (is_new_str_entry)
+    {
+        // New entry is appended to the end of the buffer.
+        entry->MultiCharOffset = Buffer.Size;
+        if (Buffer.Size == 0)
+            FirstChar = name[0];
+    }
+    else
+    {
+        // Existing buffer will be expanded and later entries need to be shifted forward
+        for (auto& e: Entries)
+            if (e.MultiCharOffset != -1 && e.MultiCharOffset > entry->MultiCharOffset)
+                e.MultiCharOffset += alloc_size;
+    }
+    Buffer.resize(Buffer.Size + alloc_size);
+
+    ImU8* entry_count = &Buffer[entry->MultiCharOffset];
+    ImGuiKeyLutEntry* str_entry = (ImGuiKeyLutEntry*)&entry_count[1];
+    for (int j = 0; j < *entry_count; j++)
+        str_entry = ImGuiKeyLutEntry_Next(str_entry);
+    *entry_count += 1;
+    memmove((ImU8*)str_entry + str_entry_size, str_entry, Buffer.end() - ((ImU8*)str_entry + str_entry_size));
+    str_entry->Key = (ImU8)(key - ImGuiKey_NamedKey_BEGIN);
+    str_entry->StrLen = name_len;
+    memcpy(str_entry->str(), name + 1, name_len);
+}
+
+ImGuiKey ImGuiKeyLut::Get(const char* name)
+{
+    int index = ImGuiKeyLutEntry_CharToIndex(name[0]);
+    auto* entry = &Entries[index];
+    if (name[0] && !name[1])
+        return entry->SingleCharKey;
+
+    int name_len = strlen(name) - 1;
+    ImU8* str_count = &Buffer[entry->MultiCharOffset];
+    ImGuiKeyLutEntry* str_entry = (ImGuiKeyLutEntry*)&str_count[1];
+    for (int i = 0, e = *str_count; i < e; i++)
+    {
+        if (IM_UNLIKELY(name_len == str_entry->StrLen))
+            if (IM_UNLIKELY(memcmp(name + 1, str_entry->str(), str_entry->StrLen) == 0))
+                return (ImGuiKey)str_entry->Key + ImGuiKey_NamedKey_BEGIN;
+        str_entry = ImGuiKeyLutEntry_Next(str_entry);
+    }
+    return ImGuiKey_None;
+}
+
+#undef ImGuiKeyLutEntry_CharToIndex
+#undef ImGuiKeyLutEntry_Next
+
+//-----------------------------------------------------------------------------
 // [SECTION] STYLING
 //-----------------------------------------------------------------------------
 

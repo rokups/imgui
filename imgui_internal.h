@@ -237,6 +237,13 @@ namespace ImStb
 #define IM_F32_TO_INT8_SAT(_VAL)        ((int)(ImSaturate(_VAL) * 255.0f + 0.5f))               // Saturated, always output 0..255
 #define IM_FLOOR(_VAL)                  ((float)(int)(_VAL))                                    // ImFloor() is not inlined in MSVC debug builds
 #define IM_ROUND(_VAL)                  ((float)(int)((_VAL) + 0.5f))                           //
+#if __GNUC__
+#define IM_LIKELY(c)                    __builtin_expect((c), 1)
+#define IM_UNLIKELY(c)                  __builtin_expect((c), 0)
+#else
+#define IM_LIKELY(c)                    c
+#define IM_UNLIKELY(c)                  c
+#endif
 
 // Enforce cdecl calling convention for functions called by the standard library, in case compilation settings changed the default to e.g. __vectorcall
 #ifdef _MSC_VER
@@ -2473,6 +2480,23 @@ struct ImGuiTableSettings
 
     ImGuiTableSettings()        { memset(this, 0, sizeof(*this)); }
     ImGuiTableColumnSettings*   GetColumnSettings()     { return (ImGuiTableColumnSettings*)(this + 1); }
+};
+
+// Key name to key lookup table
+struct IMGUI_API ImGuiKeyLut
+{
+    char            FirstChar;
+    ImVector<ImU8>  Buffer;
+    struct
+    {
+        ImU16       SingleCharKey;
+        ImS16       MultiCharOffset;
+    } Entries[68];
+
+    ImGuiKeyLut()   { Clear(); }
+    void            Clear()     { FirstChar = 0; Buffer.clear(); memset(&Entries, 0, sizeof(Entries)); }
+    void            Add(ImGuiKey key, const char* name);
+    ImGuiKey        Get(const char* name);
 };
 
 //-----------------------------------------------------------------------------
