@@ -3984,6 +3984,40 @@ static void InputTextReconcileUndoStateAfterUserCallback(ImGuiInputTextState* st
                 p[i] = ImStb::STB_TEXTEDIT_GETCHAR(state, first_diff + i);
 }
 
+static void InputTextScrollBar(ImRect scroll_bb, ImGuiID scroll_id, ImGuiAxis axis, ImGuiInputTextState* state)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiID widget_id = state->ID;
+    float size_avail = axis == ImGuiAxis_X ? scroll_bb.GetWidth() : scroll_bb.GetHeight();
+
+    // Interacting with a scrollbar. Revert ActiveId to that of a scrollbar.
+    bool active = state->UserScrollActive[axis] && g.ActiveId == widget_id;
+    if (active)
+        g.ActiveId = g.LastActiveId = g.HoveredId = scroll_id;
+
+    ImS64 scroll = (ImS64)state->Scroll[axis];
+    ImGui::ScrollbarEx(scroll_bb, scroll_id, axis, &scroll, size_avail, state->TextSize[axis] + g.Style.FramePadding.y * 2.0f, 0);
+    state->Scroll[axis] = scroll;
+    if (g.ActiveId == scroll_id)
+    {
+        // Interacting with a scrollbar. Change ActiveId back to widget id.
+        active = true;
+        g.ActiveId = g.HoveredId = widget_id;
+        if (g.LastActiveId == scroll_id)
+            g.LastActiveId = widget_id;
+        ImGui::KeepAliveID(widget_id);
+    }
+    else if (active)
+    {
+        // Scrollbar was deactivated. Reactivate text widget.
+        active = false;
+    }
+
+    // Store scrollbar state in a persistent storage, because there is no way to know whether we were interacting
+    // with a scrollbar or with a widget itself as now they share same ID.
+    state->UserScrollActive[axis] = active;
+}
+
 // Edit a string of text
 // - buf_size account for the zero-terminator, so a buf_size of 6 can hold "Hello" but not "Hello!".
 //   This is so we can easily call InputText() on static arrays using ARRAYSIZE() and to match
@@ -4023,7 +4057,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
     PushID(label);
     const ImGuiID id = GetID("");
-    const ImGuiID scrollbar_id = GetID("#SCROLLY");
+    const ImGuiID scrollbar_id[2] = { GetID("#SCROLLX"), GetID("#SCROLLY") };
     PopID();
 
     ImGuiInputTextState* state = window->InputTextStorage.GetByKey(id);
@@ -4038,18 +4072,19 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
     const ImVec2 frame_size = CalcItemSize(size_arg, CalcItemWidth(), (is_multiline ? g.FontSize * 8.0f : label_size.y) + style.FramePadding.y * 2.0f); // Arbitrary default of 8 lines high for multi-line
     const ImVec2 total_size = ImVec2(frame_size.x + (label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f), frame_size.y);
-    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + frame_size);
-    const ImRect total_bb(frame_bb.Min, frame_bb.Min + total_size);
-    const bool has_scrollbar = is_multiline && (frame_size.y - (style.FramePadding.y * 2.0f) < state->TextSizeY);
-    const ImRect inner_bb = ImRect(frame_bb.Min, frame_bb.Max - ImVec2(is_multiline && has_scrollbar ? g.Style.ScrollbarSize : 0, 0));   // Same as frame_bb, excluding any scrollbars.
+    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + frame_size); // Includes text field with scrollbars
+    const ImRect total_bb(frame_bb.Min, frame_bb.Min + total_size); // Includes text field with scrollbars and label
+    bool has_scrollbar[2] = {
+        is_multiline && (frame_size[ImGuiAxis_X] - (style.FramePadding.y * 2.0f) < state->TextSize[ImGuiAxis_X]) && (flags & ImGuiInputTextFlags_NoHorizontalScroll) == 0,
+        is_multiline && (frame_size[ImGuiAxis_Y] - (style.FramePadding.y * 2.0f) < state->TextSize[ImGuiAxis_Y])
+    };
+    const ImRect inner_bb = ImRect(frame_bb.Min, frame_bb.Max - ImVec2(has_scrollbar[ImGuiAxis_Y] ? g.Style.ScrollbarSize : 0, has_scrollbar[ImGuiAxis_X] ? g.Style.ScrollbarSize : 0));   // Same as frame_bb, excluding any scrollbars.
     const ImVec2 inner_size = inner_bb.GetSize();
     ImVec2 draw_pos = frame_bb.Min + g.Style.FramePadding;
 
     // Persistent storage of scrollbar data.
-    float scroll_y = 0;
-    bool user_scroll_active = false;
+    bool user_scroll_active = state->UserScrollActive[0] || state->UserScrollActive[1];
     bool user_scroll_finish = false;
-    ImGuiID prev_active_id = g.ActiveId;    // Scrollbars will override active ID
 
     ImGuiItemStatusFlags item_status_flags = 0;
     if (is_multiline)
@@ -4067,52 +4102,44 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // However, we must render it early, because that is how BeginChild() used to work and logic handling
         // item activation when interacting with scrollbar runs early. Because of this ordering issue height
         // of scrollbar lags by 1 frame as text size is calculated towards the end of this function and must
-        // be stored in scroll_data for next frame to acces it.
+        // be stored in scroll_data for next frame to access it.
         ImRect scroll_bb;
-        scroll_bb.Min = inner_bb.GetTR();
-        scroll_bb.Max = scroll_bb.Min + ImVec2(g.Style.ScrollbarSize, inner_bb.GetHeight());
-        float size_avail = scroll_bb.GetHeight();
-        if (has_scrollbar)
+        if (has_scrollbar[ImGuiAxis_Y])
         {
-            // Interacting with a scrollbar. Revert ActiveId to that of a scrollbar.
-            user_scroll_active = state->UserScrollActive && g.ActiveId == id;
-            if (user_scroll_active)
-                g.ActiveId = g.LastActiveId = g.HoveredId = scrollbar_id;
+            scroll_bb.Min = inner_bb.GetTR();
+            scroll_bb.Max = scroll_bb.Min + ImVec2(g.Style.ScrollbarSize, inner_bb.GetHeight());
+            InputTextScrollBar(scroll_bb, scrollbar_id[ImGuiAxis_Y], ImGuiAxis_Y, state);
+        }
+        if (has_scrollbar[ImGuiAxis_X])
+        {
+            scroll_bb.Min = inner_bb.GetBL();
+            scroll_bb.Max = scroll_bb.Min + ImVec2(inner_bb.GetWidth(), g.Style.ScrollbarSize);
+            InputTextScrollBar(scroll_bb, scrollbar_id[ImGuiAxis_X], ImGuiAxis_X, state);
+        }
+        user_scroll_finish = user_scroll_active && !state->UserScrollActive[0] && !state->UserScrollActive[1];
+        user_scroll_active = state->UserScrollActive[0] || state->UserScrollActive[1];
 
-            scroll_y = state->ScrollY;
-            ImS64 int_scroll_y = (ImS64)scroll_y;
-            ScrollbarEx(scroll_bb, scrollbar_id, ImGuiAxis_Y, &int_scroll_y, size_avail, state->TextSizeY + style.FramePadding.y * 2.0f, 0);
-            scroll_y = (float)int_scroll_y;
-            if (g.ActiveId == scrollbar_id)
+        // Mouse wheel scrolling logic.
+        if (g.HoveredWindow == window && frame_bb.Contains(g.IO.MousePos))
+        {
+            // FIXME: Scrolling logic copied from UpdateMouseWheel() which updates window scrollbars.
+            // As a standard behavior holding SHIFT while using Vertical Mouse Wheel triggers Horizontal scroll instead
+            // (we avoid doing it on OSX as it the OS input layer handles this already)
+            const bool swap_axis = g.IO.KeyShift && !g.IO.ConfigMacOSXBehaviors;
+            const float wheel_y = swap_axis ? 0.0f : g.IO.MouseWheel;
+            const float wheel_x = swap_axis ? g.IO.MouseWheel : g.IO.MouseWheelH;
+            if (wheel_y != 0.0f)
             {
-                // Interacting with a scrollbar. Change ActiveId back to widget id.
-                user_scroll_active = true;
-                g.ActiveId = g.HoveredId = id;
-                if (g.LastActiveId == scrollbar_id)
-                    g.LastActiveId = id;
-                KeepAliveID(id);
-            }
-            else if (user_scroll_active)
-            {
-                // Scrollbar was deactivated. Reactivate text widget.
-                user_scroll_active = false;
-                user_scroll_finish = true;
-            }
-
-            // Store scrollbar state in a persistent storage, because there is no way to know whether we were interacting
-            // with a scrollbar or with a widget itself as now they share same ID.
-            state->UserScrollActive = user_scroll_active;
-
-            if (g.HoveredWindow == window && frame_bb.Contains(g.IO.MousePos))
-            {
-                // FIXME: Scrolling logic copied from UpdateMouseWheel().
-                // As a standard behavior holding SHIFT while using Vertical Mouse Wheel triggers Horizontal scroll instead
-                // (we avoid doing it on OSX as it the OS input layer handles this already)
-                const bool swap_axis = g.IO.KeyShift && !g.IO.ConfigMacOSXBehaviors;
-                const float wheel_y = swap_axis ? 0.0f : g.IO.MouseWheel;
-                float max_step = window->InnerRect.GetHeight() * 0.67f;
+                float max_step = inner_bb.GetHeight() * 0.67f;
                 float scroll_step = ImFloor(ImMin(5 * window->CalcFontSize(), max_step));
-                scroll_y -= wheel_y * scroll_step;
+                state->Scroll.y -= wheel_y * scroll_step;
+                SetItemUsingMouseWheel();
+            }
+            if (wheel_x != 0.0f)
+            {
+                float max_step = inner_bb.GetWidth() * 0.67f;
+                float scroll_step = ImFloor(ImMin(2 * window->CalcFontSize(), max_step));
+                state->Scroll.x -= wheel_x * scroll_step;
                 SetItemUsingMouseWheel();
             }
         }
@@ -4127,6 +4154,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 return false;
         item_status_flags = g.LastItemData.StatusFlags;
     }
+    float scroll_x = state->Scroll.x;
+    float scroll_y = state->Scroll.y;
     const bool hovered = ItemHoverable(inner_bb, id);
     if (hovered)
         g.MouseCursor = ImGuiMouseCursor_TextInput;
@@ -4142,7 +4171,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     const bool init_changed_specs = input_is_active && (state->Stb.single_line != !is_multiline);
     const bool init_make_active = (user_clicked || user_scroll_finish || input_requested_by_nav || input_requested_by_tabbing);
     const bool init_state = (init_make_active || user_scroll_active);
-    if ((init_state && prev_active_id != id && prev_active_id != scrollbar_id) || init_changed_specs)
+    const bool is_scrollbar_id = g.ActiveId == scrollbar_id[0] || g.ActiveId == scrollbar_id[1] || g.LastActiveId == scrollbar_id[0] || g.LastActiveId == scrollbar_id[1];
+    if ((init_state && g.ActiveId != id && !is_scrollbar_id) || init_changed_specs)
     {
         // Access state even if we don't own it yet.
         input_is_active = true;
@@ -4178,7 +4208,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         }
         else
         {
-            state->ScrollX = 0.0f;
+            state->Scroll = ImVec2(0.0f, 0.0f);
             stb_textedit_initialize_state(&state->Stb, !is_multiline);
         }
 
@@ -4283,7 +4313,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         g.WantTextInputNextFrame = 1;
 
         // Edit in progress
-        const float mouse_x = (io.MousePos.x - inner_bb.Min.x - style.FramePadding.x) + state->ScrollX;
+        const float mouse_x = (io.MousePos.x - inner_bb.Min.x - style.FramePadding.x) + scroll_x;
         const float mouse_y = (is_multiline ? (io.MousePos.y - draw_pos.y + scroll_y) : (g.FontSize * 0.5f));
 
         const bool is_osx = io.ConfigMacOSXBehaviors;
@@ -4336,7 +4366,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 state->CursorAnimReset();
             }
         }
-        else if (io.MouseDown[0] && !state->SelectedAllMouseLock && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f) && !state->UserScrollActive)
+        else if (io.MouseDown[0] && !state->SelectedAllMouseLock && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f) && !user_scroll_active)
         {
             stb_textedit_drag(state, &state->Stb, mouse_x, mouse_y);
             state->CursorAnimReset();
@@ -4763,7 +4793,10 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
             // Store text height (note that we haven't calculated text width at all, see GitHub issues #383, #1224)
             if (is_multiline)
+            {
                 text_size = ImVec2(inner_size.x, line_count * g.FontSize);
+                text_size.x = InputTextCalcTextSizeW(state->TextW.Data, state->TextW.Data + state->CurLenW).x;  // FIXME: Could be updated by using a line index only when text changes.
+            }
         }
 
         // Scroll
@@ -4774,14 +4807,14 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 const float scroll_increment_x = inner_size.x * 0.25f;
                 const float visible_width = inner_size.x - style.FramePadding.x;
-                if (cursor_offset.x < state->ScrollX)
-                    state->ScrollX = IM_FLOOR(ImMax(0.0f, cursor_offset.x - scroll_increment_x));
-                else if (cursor_offset.x - visible_width >= state->ScrollX)
-                    state->ScrollX = IM_FLOOR(cursor_offset.x - visible_width + scroll_increment_x);
+                if (cursor_offset.x < scroll_x)
+                    scroll_x = IM_FLOOR(ImMax(0.0f, cursor_offset.x - scroll_increment_x));
+                else if (cursor_offset.x - visible_width >= scroll_x)
+                    scroll_x = IM_FLOOR(cursor_offset.x - visible_width + scroll_increment_x);
             }
             else
             {
-                state->ScrollX = 0.0f;
+                scroll_x = 0.0f;
             }
 
             // Vertical scroll
@@ -4798,11 +4831,13 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         }
 
         // scroll_y may be modified multiple times before this point, clamp it right before it gets used.
+        const float scroll_max_x = ImMax((text_size.x + style.FramePadding.y * 2.0f) - inner_size.x, 0.0f);
         const float scroll_max_y = ImMax((text_size.y + style.FramePadding.y * 2.0f) - inner_size.y, 0.0f);
+        scroll_x = ImClamp(scroll_x, 0.0f, scroll_max_x);
         scroll_y = ImClamp(scroll_y, 0.0f, scroll_max_y);
 
         // Draw selection
-        const ImVec2 draw_scroll = ImVec2(state->ScrollX, scroll_y);
+        const ImVec2 draw_scroll = ImVec2(scroll_x, scroll_y);
         if (render_selection)
         {
             const ImWchar* text_selected_begin = text_begin + ImMin(state->Stb.select_start, state->Stb.select_end);
@@ -4868,7 +4903,11 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     {
         // Render text only (no selection, no cursor)
         if (is_multiline)
+        {
             text_size = ImVec2(inner_size.x, InputTextCalcTextLenAndLineCount(buf_display, &buf_display_end) * g.FontSize); // We don't need width
+            const char* buf_end = buf_display + strlen(buf_display);
+            text_size.x = g.Font->CalcTextSizeA(g.FontSize, FLT_MAX, 0.0f, buf_display, buf_end).x;  // FIXME: Could be updated by using a line index only when text changes.
+        }
         else if (!is_displaying_hint && g.ActiveId == id)
             buf_display_end = buf_display + state->CurLenA;
         else if (!is_displaying_hint)
@@ -4890,9 +4929,10 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     if (is_multiline)
     {
         PopClipRect();
-        state->TextSizeY = text_size.y;
+        state->TextSize = text_size;
     }
-    state->ScrollY = scroll_y;
+    state->Scroll.x = scroll_x;
+    state->Scroll.y = scroll_y;
 
     // Log as text
     if (g.LogEnabled && (!is_password || is_displaying_hint))
