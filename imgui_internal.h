@@ -2893,10 +2893,43 @@ namespace ImGui
 // [SECTION] ImFontAtlas internal API
 //-----------------------------------------------------------------------------
 
+// Temporary data for one destination ImFont* (multiple source fonts can be merged into one destination ImFont)
+struct ImFontBuildDstData
+{
+    int                 SrcCount;           // Number of source fonts targeting this destination font.
+    int                 GlyphsHighest;
+    int                 GlyphsCount;
+    ImBitVector         GlyphsSet;          // This is used to resolve collision when multiple sources are merged into a same destination font.
+};
+
+struct stbrp_rect;
+struct stbrp_node;
+struct stbrp_context;
+
+struct ImFontBuildSrcData
+{
+    stbrp_rect*         Rects;              // Rectangle to pack. We first fill in their size and the packer will give us their position.
+    const ImWchar*      SrcRanges;          // Ranges as requested by user (user is allowed to request too much, e.g. 0x0020..0xFFFF)
+    int                 DstIndex;           // Index into atlas->Fonts[] and dst_tmp_array[]
+    int                 GlyphsHighest;      // Highest requested codepoint
+    int                 GlyphsCount;        // Glyph count (excluding missing glyphs and glyphs already set by an earlier source font)
+    ImBitVector         GlyphsSet;          // Glyph bit map (random access, 1-bit per codepoint. This will be a maximum of 8KB)
+    ImVector<int>       GlyphsList;         // Glyph codepoints list (flattened version of GlyphsMap)
+};
+
+// Common font builder context used by both STB and FreeType rasterizers.
+struct ImFontBuilderContext
+{
+    stbrp_node*         RectPackNodes;
+    stbrp_context*      RectPackContext;
+};
+
 // This structure is likely to evolve as we add support for incremental atlas updates
 struct ImFontBuilderIO
 {
-    bool    (*FontBuilder_Build)(ImFontAtlas* atlas);
+    void*               (*FontBuilder_ContextCreate)();
+    void                (*FontBuilder_ContextDestroy)(void* context);
+    bool                (*FontBuilder_Build)(ImFontAtlas* atlas);
 };
 
 // Helper for font builder
