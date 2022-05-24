@@ -420,6 +420,7 @@ bool    ImGui::BeginTableEx(const char* name, ImGuiID id, int columns_count, ImG
     temp_data->HostBackupItemWidth = outer_window->DC.ItemWidth;
     temp_data->HostBackupItemWidthStackSize = outer_window->DC.ItemWidthStack.Size;
     inner_window->DC.PrevLineSize = inner_window->DC.CurrLineSize = ImVec2(0.0f, 0.0f);
+    inner_window->ContentRegionRect.Max.y -= table->CellPaddingY;   // Account for bottom cell padding.
 
     // Padding and Spacing
     // - None               ........Content..... Pad .....Content........
@@ -1385,6 +1386,7 @@ void    ImGui::EndTable()
         // OuterRect.Max.y may already have been pushed downward from the initial value (unless ImGuiTableFlags_NoHostExtendY is set)
         outer_window->DC.CursorMaxPos.y = ImMax(backup_outer_max_pos.y, table->OuterRect.Max.y);
     }
+    inner_window->ContentRegionRect.Max.y += table->CellPaddingY;
 
     // Save settings
     if (table->IsSettingsDirty)
