@@ -448,6 +448,8 @@ bool    ImGui::BeginTableEx(const char* name, ImGuiID id, int columns_count, ImG
     table->InnerClipRect.ClipWith(table->WorkRect);     // We need this to honor inner_width
     table->InnerClipRect.ClipWithFull(table->HostClipRect);
     table->InnerClipRect.Max.y = (flags & ImGuiTableFlags_NoHostExtendY) ? ImMin(table->InnerClipRect.Max.y, inner_window->WorkRect.Max.y) : inner_window->ClipRect.Max.y;
+    table->InnerClipRect.Min.x -= pad_outer_x ? 0 : g.Style.CellPadding.x;
+    table->InnerClipRect.Max.x += pad_outer_x ? 0 : g.Style.CellPadding.x;
 
     table->RowPosY1 = table->RowPosY2 = table->WorkRect.Min.y; // This is needed somehow
     table->RowTextBaseline = 0.0f; // This will be cleared again by TableBeginRow()
