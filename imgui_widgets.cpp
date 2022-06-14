@@ -4177,7 +4177,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         }
         else
         {
-            state->ScrollX = 0.0f;
+            state->Scroll.x = 0.0f;
             stb_textedit_initialize_state(&state->Stb, !is_multiline);
         }
 
@@ -4288,7 +4288,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         g.WantTextInputNextFrame = 1;
 
         // Edit in progress
-        const float mouse_x = (io.MousePos.x - inner_bb.Min.x - style.FramePadding.x) + state->ScrollX;
+        const float mouse_x = (io.MousePos.x - inner_bb.Min.x - style.FramePadding.x) + state->Scroll.x;
         const float mouse_y = (is_multiline ? (io.MousePos.y - draw_pos.y + scroll_y) : (g.FontSize * 0.5f));
 
         const bool is_osx = io.ConfigMacOSXBehaviors;
@@ -4780,14 +4780,14 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 const float scroll_increment_x = inner_size.x * 0.25f;
                 const float visible_width = inner_size.x - style.FramePadding.x;
-                if (cursor_offset.x < state->ScrollX)
-                    state->ScrollX = IM_FLOOR(ImMax(0.0f, cursor_offset.x - scroll_increment_x));
-                else if (cursor_offset.x - visible_width >= state->ScrollX)
-                    state->ScrollX = IM_FLOOR(cursor_offset.x - visible_width + scroll_increment_x);
+                if (cursor_offset.x < state->Scroll.x)
+                    state->Scroll.x = IM_FLOOR(ImMax(0.0f, cursor_offset.x - scroll_increment_x));
+                else if (cursor_offset.x - visible_width >= state->Scroll.x)
+                    state->Scroll.x = IM_FLOOR(cursor_offset.x - visible_width + scroll_increment_x);
             }
             else
             {
-                state->ScrollX = 0.0f;
+                state->Scroll.x = 0.0f;
             }
 
             // Vertical scroll
@@ -4808,7 +4808,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         scroll_y = ImClamp(scroll_y, 0.0f, scroll_max_y);
 
         // Draw selection
-        const ImVec2 draw_scroll = ImVec2(state->ScrollX, scroll_y);
+        const ImVec2 draw_scroll = ImVec2(state->Scroll.x, scroll_y);
         if (render_selection)
         {
             const ImWchar* text_selected_begin = text_begin + ImMin(state->Stb.select_start, state->Stb.select_end);
@@ -4924,7 +4924,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             state->TextSizeY = text_size.y;
     }
     if (state)
-        state->ScrollY = scroll_y;
+        state->Scroll.y = scroll_y;
 
     // Log as text
     if (g.LogEnabled && (!is_password || is_displaying_hint))
