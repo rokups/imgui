@@ -13356,7 +13356,7 @@ void ImGui::UpdateDebugToolStackQueries()
 
     // Update queries. The steps are: -1: query Stack, >= 0: query each stack item
     // We can only perform 1 ID Info query every frame. This is designed so the GetID() tests are cheap and constant-time
-    if (g.DebugHookIdInfo != tool->QueryId && tool->StackLevel == -1)
+    if ((g.DebugHookIdInfo != tool->QueryId && tool->StackLevel == -1) || tool->QueryId == 0)
         tool->Results.resize(0);
     if (tool->QueryId == 0)
         return;
