@@ -1562,6 +1562,7 @@ struct ImGuiStackTool
     ImVector<ImGuiStackLevelInfo> Results;
     bool                    CopyToClipboardOnCtrlC;
     float                   CopyToClipboardLastTime;
+    char                    ManualQueryId[11];
 
     ImGuiStackTool()        { memset(this, 0, sizeof(*this)); CopyToClipboardLastTime = -FLT_MAX; }
 };
