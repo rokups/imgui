@@ -13356,10 +13356,9 @@ void ImGui::UpdateDebugToolStackQueries()
 
     // Update queries. The steps are: -1: query Stack, >= 0: query each stack item
     // We can only perform 1 ID Info query every frame. This is designed so the GetID() tests are cheap and constant-time
-    ImGuiID query_id = tool->QueryId;
-    if (g.DebugHookIdInfo != query_id && tool->StackLevel == -1)
+    if (g.DebugHookIdInfo != tool->QueryId && tool->StackLevel == -1)
         tool->Results.resize(0);
-    if (query_id == 0)
+    if (tool->QueryId == 0)
         return;
 
     // Advance to next stack level when we got our result, or after 2 frames (in case we never get a result)
@@ -13371,7 +13370,7 @@ void ImGui::UpdateDebugToolStackQueries()
     // Update hook
     stack_level = tool->StackLevel;
     if (stack_level == -1)
-        g.DebugHookIdInfo = query_id;
+        g.DebugHookIdInfo = tool->QueryId;
     if (stack_level >= 0 && stack_level < tool->Results.Size)
     {
         g.DebugHookIdInfo = tool->Results[stack_level].ID;
@@ -13456,40 +13455,37 @@ void ImGui::ShowStackToolWindow(bool* p_open)
         return;
     }
 
-    // Display hovered/active status
+    // Display input box + hovered/active status
     ImGuiStackTool* tool = &g.DebugStackTool;
     const ImGuiID hovered_id = g.HoveredIdPreviousFrame;
     const ImGuiID active_id = g.ActiveId;
-    const ImGuiID query_id = hovered_id ? hovered_id : active_id;
-    char hint[256];
-#ifdef IMGUI_ENABLE_TEST_ENGINE
-    ImFormatString(hint, IM_ARRAYSIZE(hint), "HoveredId: 0x%08X (\"%s\"), ActiveId:  0x%08X (\"%s\")", hovered_id, hovered_id ? ImGuiTestEngine_FindItemDebugLabel(&g, hovered_id) : "", active_id, active_id ? ImGuiTestEngine_FindItemDebugLabel(&g, active_id) : "");
-#else
-    ImFormatString(hint, IM_ARRAYSIZE(hint), "HoveredId: 0x%08X, ActiveId:  0x%08X", hovered_id, active_id);
-#endif
-    SetNextItemWidth(-CalcTextSize("(?)").x - g.Style.ItemSpacing.x);
-    if (InputTextWithHint("###QueryId", hint, tool->ManualQueryId, IM_ARRAYSIZE(tool->ManualQueryId)))
+    SetNextItemWidth(CalcTextSize("0xDDDDDDDD..").x);
+    if (InputTextWithHint("###QueryId", "0x00000000", tool->ManualQueryId, IM_ARRAYSIZE(tool->ManualQueryId)))
     {
         int chars_read = 0;
         sscanf(tool->ManualQueryId, "%X%n", &tool->QueryId, &chars_read);
-        if (tool->ManualQueryId[chars_read])
+        if (tool->ManualQueryId[chars_read] != 0 && !ImCharIsBlankA(tool->ManualQueryId[chars_read]))
             tool->QueryId = 0;  // Invalid input
         tool->StackLevel = -1;
     }
-
-    // Error border.
-    if (tool->ManualQueryId[0] && tool->QueryId == 0)
+    if (tool->ManualQueryId[0] && tool->QueryId == 0) // Error border
         g.CurrentWindow->DrawList->AddRect(GetItemRectMin(), GetItemRectMax(), GetColorU32(IM_COL32(255, 0, 0, 255)));
-
-    // A different item is hovered.
-    if (!tool->ManualQueryId[0] && tool->QueryId != query_id)
-    {
-        tool->QueryId = query_id;
-        tool->StackLevel = -1;
-    }
-
+    SameLine();
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+    Text("or HoveredId: 0x%08X (\"%s\"), ActiveId: 0x%08X (\"%s\")", hovered_id, hovered_id ? ImGuiTestEngine_FindItemDebugLabel(&g, hovered_id) : "", active_id, active_id ? ImGuiTestEngine_FindItemDebugLabel(&g, active_id) : "");
+#else
+    Text("or HoveredId: 0x%08X, ActiveId: 0x%08X", hovered_id, active_id);
+#endif
     SameLine();
     MetricsHelpMarker("Hover an item with the mouse or enter hexadecimal ID manually to display elements of the ID Stack leading to the item's final ID.\nEach level of the stack correspond to a PushID() call.\nAll levels of the stack are hashed together to make the final ID of a widget (ID displayed at the bottom level of the stack).\nRead FAQ entry about the ID stack for details.");
+
+    // A different item is hovered.
+    const ImGuiID auto_query_id = hovered_id ? hovered_id : active_id;
+    if (!tool->ManualQueryId[0] && tool->QueryId != auto_query_id)
+    {
+        tool->QueryId = auto_query_id;
+        tool->StackLevel = -1;
+    }
 
     // CTRL+C to copy path
     const float time_since_copy = (float)g.Time - tool->CopyToClipboardLastTime;
@@ -13519,7 +13515,7 @@ void ImGui::ShowStackToolWindow(bool* p_open)
 
     // Display decorated stack
     tool->LastActiveFrame = g.FrameCount;
-    if (tool->Results.Size > 0 && BeginTable("##table", 3, ImGuiTableFlags_Borders))
+    if (BeginTable("##table", 3, ImGuiTableFlags_Borders))
     {
         const float id_width = CalcTextSize("0xDDDDDDDD").x;
         TableSetupColumn("Seed", ImGuiTableColumnFlags_WidthFixed, id_width);
@@ -13538,6 +13534,13 @@ void ImGui::ShowStackToolWindow(bool* p_open)
             Text("0x%08X", info->ID);
             if (n == tool->Results.Size - 1)
                 TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
+        }
+        if (tool->Results.Size == 0)
+        {
+            TableNextRow();
+            TableSetColumnIndex(2);
+            Text("0x%08X", tool->QueryId);
+            TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
         }
         EndTable();
     }
