@@ -13343,6 +13343,31 @@ void ImGui::UpdateDebugToolItemPicker()
     EndTooltip();
 }
 
+static bool StackToolIsNewQuery()
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiStackTool* tool = &g.DebugStackTool;
+    return g.DebugHookIdInfo != tool->QueryId && tool->StackLevel == -1;
+}
+
+static void StackToolStartQuery(ImGuiID id)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiStackTool* tool = &g.DebugStackTool;
+    tool->QueryId = id;
+    tool->StackLevel = -1;
+}
+
+static void StackToolStartQuery(const char* hex_id)
+{
+    int chars_read = 0;
+    ImGuiID query_id = 0;
+    int num_scanned = sscanf(hex_id, "%X%n", &query_id, &chars_read);
+    if (num_scanned != 1 || (hex_id[chars_read] != 0 && !ImCharIsBlankA(hex_id[chars_read])))
+        query_id = 0;
+    StackToolStartQuery(query_id);
+}
+
 // [DEBUG] Stack Tool: update queries. Called by NewFrame()
 void ImGui::UpdateDebugToolStackQueries()
 {
@@ -13356,7 +13381,7 @@ void ImGui::UpdateDebugToolStackQueries()
 
     // Update queries. The steps are: -1: query Stack, >= 0: query each stack item
     // We can only perform 1 ID Info query every frame. This is designed so the GetID() tests are cheap and constant-time
-    if ((g.DebugHookIdInfo != tool->QueryId && tool->StackLevel == -1) || tool->QueryId == 0)
+    if (StackToolIsNewQuery() || tool->QueryId == 0)
         tool->Results.resize(0);
     if (tool->QueryId == 0)
         return;
@@ -13461,14 +13486,9 @@ void ImGui::ShowStackToolWindow(bool* p_open)
     const ImGuiID active_id = g.ActiveId;
     SetNextItemWidth(CalcTextSize("0xDDDDDDDD..").x);
     if (InputTextWithHint("###QueryId", "0x00000000", tool->ManualQueryId, IM_ARRAYSIZE(tool->ManualQueryId)))
-    {
-        int chars_read = 0;
-        sscanf(tool->ManualQueryId, "%X%n", &tool->QueryId, &chars_read);
-        if (tool->ManualQueryId[chars_read] != 0 && !ImCharIsBlankA(tool->ManualQueryId[chars_read]))
-            tool->QueryId = 0;  // Invalid input
-        tool->StackLevel = -1;
-    }
-    if (tool->ManualQueryId[0] && tool->QueryId == 0) // Error border
+        StackToolStartQuery(tool->ManualQueryId);
+    const bool use_manual_id = tool->ManualQueryId[0] != 0;
+    if (use_manual_id && tool->QueryId == 0) // Error border
         g.CurrentWindow->DrawList->AddRect(GetItemRectMin(), GetItemRectMax(), GetColorU32(IM_COL32(255, 0, 0, 255)));
     SameLine();
 #ifdef IMGUI_ENABLE_TEST_ENGINE
@@ -13481,11 +13501,8 @@ void ImGui::ShowStackToolWindow(bool* p_open)
 
     // A different item is hovered.
     const ImGuiID auto_query_id = hovered_id ? hovered_id : active_id;
-    if (!tool->ManualQueryId[0] && tool->QueryId != auto_query_id)
-    {
-        tool->QueryId = auto_query_id;
-        tool->StackLevel = -1;
-    }
+    if (!use_manual_id && tool->QueryId != auto_query_id)
+        StackToolStartQuery(auto_query_id);
 
     // CTRL+C to copy path
     const float time_since_copy = (float)g.Time - tool->CopyToClipboardLastTime;
