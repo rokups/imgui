@@ -13343,63 +13343,59 @@ void ImGui::UpdateDebugToolItemPicker()
     EndTooltip();
 }
 
-static bool StackToolIsNewQuery()
-{
-    ImGuiContext& g = *GImGui;
-    ImGuiStackTool* tool = &g.DebugStackTool;
-    return g.DebugHookIdInfo != tool->QueryId && tool->StackLevel == -1;
-}
-
-static void StackToolStartQuery(ImGuiID id)
-{
-    ImGuiContext& g = *GImGui;
-    ImGuiStackTool* tool = &g.DebugStackTool;
-    tool->QueryId = id;
-    tool->StackLevel = -1;
-}
-
-static void StackToolStartQuery(const char* hex_id)
+static ImGuiID DebugQueryIdFromHexString(const char* hex_id)
 {
     int chars_read = 0;
     ImGuiID query_id = 0;
     int num_scanned = sscanf(hex_id, "%X%n", &query_id, &chars_read);
     if (num_scanned != 1 || (hex_id[chars_read] != 0 && !ImCharIsBlankA(hex_id[chars_read])))
         query_id = 0;
-    StackToolStartQuery(query_id);
+    return query_id;
 }
 
 // [DEBUG] Stack Tool: update queries. Called by NewFrame()
 void ImGui::UpdateDebugToolStackQueries()
 {
     ImGuiContext& g = *GImGui;
-    ImGuiStackTool* tool = &g.DebugStackTool;
+    ImGuiIDQuery* query = g.DebugIdQueryCurrent;
 
-    // Clear hook when stack tool is not visible
+    // Clear hook when query is completed.
     g.DebugHookIdInfo = 0;
-    if (g.FrameCount != tool->LastActiveFrame + 1)
+    if (query == NULL)
         return;
+
+    // Two frames have passed and first ID was not found, query failed.
+    if (query->LastActiveFrame + 2 == g.FrameCount && query->StackLevel == -1)
+    {
+        query->StackLevel = 0;
+        query->Results.resize(0);
+        g.DebugIdQueryCurrent = NULL;
+        return;
+    }
 
     // Update queries. The steps are: -1: query Stack, >= 0: query each stack item
     // We can only perform 1 ID Info query every frame. This is designed so the GetID() tests are cheap and constant-time
-    if (StackToolIsNewQuery() || tool->QueryId == 0)
-        tool->Results.resize(0);
-    if (tool->QueryId == 0)
-        return;
-
     // Advance to next stack level when we got our result, or after 2 frames (in case we never get a result)
-    int stack_level = tool->StackLevel;
-    if (stack_level >= 0 && stack_level < tool->Results.Size)
-        if (tool->Results[stack_level].QuerySuccess || tool->Results[stack_level].QueryFrameCount > 2)
-            tool->StackLevel++;
+    int stack_level = query->StackLevel;
+    if (stack_level >= 0 && stack_level < query->Results.Size)
+        if (query->Results[stack_level].QuerySuccess || query->Results[stack_level].QueryFrameCount > 2)
+            query->StackLevel++;
 
     // Update hook
-    stack_level = tool->StackLevel;
+    stack_level = query->StackLevel;
     if (stack_level == -1)
-        g.DebugHookIdInfo = tool->QueryId;
-    if (stack_level >= 0 && stack_level < tool->Results.Size)
     {
-        g.DebugHookIdInfo = tool->Results[stack_level].ID;
-        tool->Results[stack_level].QueryFrameCount++;
+        g.DebugHookIdInfo = query->QueryId;
+    }
+    else if (stack_level >= 0 && stack_level < query->Results.Size)
+    {
+        g.DebugHookIdInfo = query->Results[stack_level].ID;
+        query->Results[stack_level].QueryFrameCount++;
+    }
+    else
+    {
+        // Query was completed.
+        g.DebugIdQueryCurrent = NULL;
     }
 }
 
@@ -13408,24 +13404,27 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
 {
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
-    ImGuiStackTool* tool = &g.DebugStackTool;
+    ImGuiIDQuery* query = g.DebugIdQueryCurrent;
+    if (query == NULL)
+        return;
+    query->LastActiveFrame = g.FrameCount;
 
     // Step 0: stack query
     // This assume that the ID was computed with the current ID stack, which tends to be the case for our widget.
-    if (tool->StackLevel == -1)
+    if (query->StackLevel == -1)
     {
-        tool->StackLevel++;
-        tool->Results.resize(window->IDStack.Size + 1, ImGuiStackLevelInfo());
+        query->StackLevel++;
+        query->Results.resize(window->IDStack.Size + 1, ImGuiStackLevelInfo());
         for (int n = 0; n < window->IDStack.Size + 1; n++)
-            tool->Results[n].ID = (n < window->IDStack.Size) ? window->IDStack[n] : id;
+            query->Results[n].ID = (n < window->IDStack.Size) ? window->IDStack[n] : id;
         return;
     }
 
     // Step 1+: query for individual level
-    IM_ASSERT(tool->StackLevel >= 0);
-    if (tool->StackLevel != window->IDStack.Size)
+    IM_ASSERT(query->StackLevel >= 0);
+    if (query->StackLevel != window->IDStack.Size)
         return;
-    ImGuiStackLevelInfo* info = &tool->Results[tool->StackLevel];
+    ImGuiStackLevelInfo* info = &query->Results[query->StackLevel];
     IM_ASSERT(info->ID == id && info->QueryFrameCount > 0);
 
     switch (data_type)
@@ -13451,21 +13450,105 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
     info->DataType = data_type;
 }
 
-static int StackToolFormatLevelInfo(ImGuiStackTool* tool, int n, bool format_for_ui, char* buf, size_t buf_size)
+// [DEBUG] Stack tool: format label of specified stack level
+static int StackToolFormatLevelInfo(ImGuiIDQuery* query, int n, bool format_for_ui, char* buf, size_t buf_size)
 {
-    ImGuiStackLevelInfo* info = &tool->Results[n];
+    ImGuiStackLevelInfo* info = &query->Results[n];
     ImGuiWindow* window = (info->Desc[0] == 0 && n == 0) ? ImGui::FindWindowByID(info->ID) : NULL;
     if (window)                                                                 // Source: window name (because the root ID don't call GetID() and so doesn't get hooked)
         return ImFormatString(buf, buf_size, format_for_ui ? "\"%s\" [window]" : "%s", window->Name);
     if (info->QuerySuccess)                                                     // Source: GetID() hooks (prioritize over ItemInfo() because we frequently use patterns like: PushID(str), Button("") where they both have same id)
         return ImFormatString(buf, buf_size, (format_for_ui && info->DataType == ImGuiDataType_String) ? "\"%s\"" : "%s", info->Desc);
-    if (tool->StackLevel < tool->Results.Size)                                  // Only start using fallback below when all queries are done, so during queries we don't flickering ??? markers.
+    if (query->StackLevel < query->Results.Size)                                // Only start using fallback below when all queries are done, so during queries we don't flickering ??? markers.
         return (*buf = 0);
 #ifdef IMGUI_ENABLE_TEST_ENGINE
     if (const char* label = ImGuiTestEngine_FindItemDebugLabel(GImGui, info->ID))   // Source: ImGuiTestEngine's ItemInfo()
         return ImFormatString(buf, buf_size, format_for_ui ? "??? \"%s\"" : "%s", label);
 #endif
     return ImFormatString(buf, buf_size, "???");
+}
+
+// [DEBUG] Stack tool: try to submit a query for stack of specified id. Function returns true when query is completed
+// successfully. Query pointer must remain valid until completion, which may take multiple frames. If a different id is
+// submitted with in-progress query object, new query will not be started until previous one completes or fails.
+static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
+{
+    ImGuiContext& g = *GImGui;
+
+    if (query->QueryId == id && query->StackLevel == query->Results.Size)
+        return true;    // Completed, do not try to submit a query.
+
+    if (query == g.DebugIdQueryCurrent)
+        return false;   // Query is in progress. Wait until it completes.
+
+    // Not querying anything, clear query.
+    if (id == 0)
+    {
+        query->QueryId = id;
+        query->Results.clear();
+        query->StackLevel = 0;  // Implies "completed" state.
+        return true;
+    }
+
+    // Try to repeatedly set g.DebugCurrentIdQuery, which will be used by a hook for filling in id stack levels. This
+    // means that DebugQueryId() has to be repeatedly called until previously submitted queries and this query complete.
+    if (g.DebugIdQueryCurrent == NULL)
+    {
+        query->QueryId = id;
+        query->StackLevel = -1;
+        query->Results.resize(0);
+        query->LastActiveFrame = g.FrameCount;
+        g.DebugIdQueryCurrent = query;
+    }
+    return false;
+}
+
+const char* ImGui::DebugGetIdLabel(ImGuiID id, ImGuiIDQuery* query, int id_stack_lvl)
+{
+    ImGuiContext& g = *GImGui;
+    if (id == 0 || !DebugQueryId(id, query))
+        return "";
+
+    int index = id_stack_lvl < 0 ? ((int)query->Results.Size - id_stack_lvl) : id_stack_lvl;
+    if (0 <= index && index < query->Results.Size)
+    {
+        g.TempBuffer.resize(255);
+        StackToolFormatLevelInfo(query, index, false, g.TempBuffer.Data, g.TempBuffer.Size);
+        return g.TempBuffer.Data;
+    }
+    return "";
+}
+
+const char* ImGui::DebugGetIdPath(ImGuiID id, ImGuiIDQuery* query)
+{
+    ImGuiContext& g = *GImGui;
+    if (id == 0 || !DebugQueryId(id, query))
+        return "";
+
+    g.TempBuffer.resize(256);
+    char* p = g.TempBuffer.Data;
+    char* p_end = p + g.TempBuffer.Size;
+    for (int stack_n = 0; stack_n < query->Results.Size; stack_n++)
+    {
+        *p++ = '/';
+        char level_desc[256];
+        StackToolFormatLevelInfo(query, stack_n, false, level_desc, IM_ARRAYSIZE(level_desc));
+        for (int n = 0; level_desc[n]; n++)
+        {
+            if (p + 3 >= p_end)
+            {
+                int offset = p - g.TempBuffer.Data;
+                g.TempBuffer.resize(g.TempBuffer.Size + 64);
+                p = g.TempBuffer.Data + offset;
+                p_end = g.TempBuffer.end();
+            }
+            if (level_desc[n] == '/')
+                *p++ = '\\';
+            *p++ = level_desc[n];
+        }
+    }
+    *p = '\0';
+    return g.TempBuffer.Data;
 }
 
 // Stack Tool: Display UI
@@ -13485,10 +13568,10 @@ void ImGui::ShowStackToolWindow(bool* p_open)
     const ImGuiID hovered_id = g.HoveredIdPreviousFrame;
     const ImGuiID active_id = g.ActiveId;
     SetNextItemWidth(CalcTextSize("0xDDDDDDDD..").x);
-    if (InputTextWithHint("###QueryId", "0x00000000", tool->ManualQueryId, IM_ARRAYSIZE(tool->ManualQueryId)))
-        StackToolStartQuery(tool->ManualQueryId);
+    InputTextWithHint("###QueryId", "0x00000000", tool->ManualQueryId, IM_ARRAYSIZE(tool->ManualQueryId));
+    const ImGuiID manual_id = DebugQueryIdFromHexString(tool->ManualQueryId);
     const bool use_manual_id = tool->ManualQueryId[0] != 0;
-    if (use_manual_id && tool->QueryId == 0) // Error border
+    if (use_manual_id && !manual_id) // Error border
         g.CurrentWindow->DrawList->AddRect(GetItemRectMin(), GetItemRectMax(), GetColorU32(IM_COL32(255, 0, 0, 255)));
     SameLine();
 #ifdef IMGUI_ENABLE_TEST_ENGINE
@@ -13499,39 +13582,25 @@ void ImGui::ShowStackToolWindow(bool* p_open)
     SameLine();
     MetricsHelpMarker("Hover an item with the mouse or enter hexadecimal ID manually to display elements of the ID Stack leading to the item's final ID.\nEach level of the stack correspond to a PushID() call.\nAll levels of the stack are hashed together to make the final ID of a widget (ID displayed at the bottom level of the stack).\nRead FAQ entry about the ID stack for details.");
 
-    // A different item is hovered.
-    const ImGuiID auto_query_id = hovered_id ? hovered_id : active_id;
-    if (!use_manual_id && tool->QueryId != auto_query_id)
-        StackToolStartQuery(auto_query_id);
+    // Even though DebugGetIdLabel() call does submit id query, an explicit call outside the table is required, because
+    // number of rows in the table depends on query->Results, and when its empty DebugGetIdLabel() would not be called
+    // and no query would be submitted.
+    const ImGuiID auto_query_id = manual_id ? manual_id : hovered_id ? hovered_id : active_id;
+    DebugQueryId(auto_query_id, &tool->Query);
 
     // CTRL+C to copy path
     const float time_since_copy = (float)g.Time - tool->CopyToClipboardLastTime;
     Checkbox("Ctrl+C: copy path to clipboard", &tool->CopyToClipboardOnCtrlC);
     SameLine();
     TextColored((time_since_copy >= 0.0f && time_since_copy < 0.75f && ImFmod(time_since_copy, 0.25f) < 0.25f * 0.5f) ? ImVec4(1.f, 1.f, 0.3f, 1.f) : ImVec4(), "*COPIED*");
+    ImVector<ImGuiStackLevelInfo>* results = &tool->Query.Results;
     if (tool->CopyToClipboardOnCtrlC && IsKeyDown(ImGuiKey_ModCtrl) && IsKeyPressed(ImGuiKey_C))
     {
         tool->CopyToClipboardLastTime = (float)g.Time;
-        char* p = g.TempBuffer.Data;
-        char* p_end = p + g.TempBuffer.Size;
-        for (int stack_n = 0; stack_n < tool->Results.Size && p + 3 < p_end; stack_n++)
-        {
-            *p++ = '/';
-            char level_desc[256];
-            StackToolFormatLevelInfo(tool, stack_n, false, level_desc, IM_ARRAYSIZE(level_desc));
-            for (int n = 0; level_desc[n] && p + 2 < p_end; n++)
-            {
-                if (level_desc[n] == '/')
-                    *p++ = '\\';
-                *p++ = level_desc[n];
-            }
-        }
-        *p = '\0';
-        SetClipboardText(g.TempBuffer.Data);
+        SetClipboardText(DebugGetIdPath(auto_query_id, &tool->Query));
     }
 
     // Display decorated stack
-    tool->LastActiveFrame = g.FrameCount;
     if (BeginTable("##table", 3, ImGuiTableFlags_Borders))
     {
         const float id_width = CalcTextSize("0xDDDDDDDD").x;
@@ -13539,24 +13608,23 @@ void ImGui::ShowStackToolWindow(bool* p_open)
         TableSetupColumn("PushID", ImGuiTableColumnFlags_WidthStretch);
         TableSetupColumn("Result", ImGuiTableColumnFlags_WidthFixed, id_width);
         TableHeadersRow();
-        for (int n = 0; n < tool->Results.Size; n++)
+        for (int n = 0; n < results->Size; n++)
         {
-            ImGuiStackLevelInfo* info = &tool->Results[n];
+            ImGuiStackLevelInfo* info = &results->Data[n];
             TableNextColumn();
-            Text("0x%08X", (n > 0) ? tool->Results[n - 1].ID : 0);
+            Text("0x%08X", (n > 0) ? results->Data[n - 1].ID : 0);
             TableNextColumn();
-            StackToolFormatLevelInfo(tool, n, true, g.TempBuffer.Data, g.TempBuffer.Size);
-            TextUnformatted(g.TempBuffer.Data);
+            TextUnformatted(DebugGetIdLabel(auto_query_id, &tool->Query, n));
             TableNextColumn();
             Text("0x%08X", info->ID);
-            if (n == tool->Results.Size - 1)
+            if (n == results->Size - 1)
                 TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
         }
-        if (tool->Results.Size == 0)
+        if (results->Size == 0)
         {
             TableNextRow();
             TableSetColumnIndex(2);
-            Text("0x%08X", tool->QueryId);
+            Text("0x%08X", auto_query_id);
             TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
         }
         EndTable();

@@ -1553,13 +1553,18 @@ struct ImGuiStackLevelInfo
     ImGuiStackLevelInfo()   { memset(this, 0, sizeof(*this)); }
 };
 
+struct ImGuiIDQuery
+{
+    ImGuiID                 QueryId;                    // ID to query details for
+    int                     LastActiveFrame;
+    int                     StackLevel;                 // -1: query stack and resize Results, >= 0: individual stack level
+    ImVector<ImGuiStackLevelInfo> Results;
+};
+
 // State for Stack tool queries
 struct ImGuiStackTool
 {
-    int                     LastActiveFrame;
-    int                     StackLevel;                 // -1: query stack and resize Results, >= 0: individual stack level
-    ImGuiID                 QueryId;                    // ID to query details for
-    ImVector<ImGuiStackLevelInfo> Results;
+    ImGuiIDQuery            Query;
     bool                    CopyToClipboardOnCtrlC;
     float                   CopyToClipboardLastTime;
     char                    ManualQueryId[11];
@@ -1843,6 +1848,8 @@ struct ImGuiContext
     ImGuiID                 DebugItemPickerBreakId;             // Will call IM_DEBUG_BREAK() when encountering this ID
     ImGuiMetricsConfig      DebugMetricsConfig;
     ImGuiStackTool          DebugStackTool;
+
+    ImGuiIDQuery*           DebugIdQueryCurrent;
 
     // Misc
     float                   FramerateSecPerFrame[60];           // Calculate estimate of framerate for user over the last 60 frames..
@@ -2929,6 +2936,8 @@ namespace ImGui
     IMGUI_API void          DebugNodeWindowsListByBeginStackParent(ImGuiWindow** windows, int windows_size, ImGuiWindow* parent_in_begin_stack);
     IMGUI_API void          DebugNodeViewport(ImGuiViewportP* viewport);
     IMGUI_API void          DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* viewport, const ImRect& bb);
+    IMGUI_API const char*   DebugGetIdLabel(ImGuiID id, ImGuiIDQuery* query, int id_stack_lvl = -1);
+    IMGUI_API const char*   DebugGetIdPath(ImGuiID id, ImGuiIDQuery* query);
 
     // Obsolete functions
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
