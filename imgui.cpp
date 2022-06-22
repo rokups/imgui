@@ -13417,6 +13417,8 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
         query->Results.resize(window->IDStack.Size + 1, ImGuiStackLevelInfo());
         for (int n = 0; n < window->IDStack.Size + 1; n++)
             query->Results[n].ID = (n < window->IDStack.Size) ? window->IDStack[n] : id;
+        query->Strings.resize(1);
+        query->Strings.Data[0] = 0; // Default empty string for levels that are not yet initialized.
         return;
     }
 
@@ -13426,26 +13428,43 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
         return;
     ImGuiStackLevelInfo* info = &query->Results[query->StackLevel];
     IM_ASSERT(info->ID == id && info->QueryFrameCount > 0);
+    int consumed = 0, length = 0;
 
+    // Formatting here breaks conventions for convenience.
+    // 1. String buffer is reserved, but size of container remains the same.
+    // 2. Format string into the .end() of string buffer, which points to a valid memory we just reserved.
+    // 3. Resize string buffer by adding a number of consumed bytes + 1 (\0) to old size.
+    // 4. Repeat from the start. This results in multiple strings "\0formatted\0like\0so\0".
     switch (data_type)
     {
     case ImGuiDataType_S32:
-        ImFormatString(info->Desc, IM_ARRAYSIZE(info->Desc), "%d", (int)(intptr_t)data_id);
+        query->Strings.reserve(query->Strings.Size + 12);
+        consumed = ImFormatString(query->Strings.end(), query->Strings.Capacity - query->Strings.Size, "%d", (int)(intptr_t)data_id);
+        IM_ASSERT(0 < consumed && consumed < 12);
         break;
     case ImGuiDataType_String:
-        ImFormatString(info->Desc, IM_ARRAYSIZE(info->Desc), "%.*s", data_id_end ? (int)((const char*)data_id_end - (const char*)data_id) : (int)strlen((const char*)data_id), (const char*)data_id);
+        length = data_id_end ? (int)((const char*)data_id_end - (const char*)data_id) : (int)strlen((const char*)data_id);
+        query->Strings.reserve(query->Strings.Size + length + 1);
+        consumed = ImFormatString(query->Strings.end(), query->Strings.Capacity - query->Strings.Size, "%.*s", length, (const char*)data_id);
+        IM_ASSERT(0 < consumed && consumed < (query->Strings.Capacity - query->Strings.Size));
         break;
     case ImGuiDataType_Pointer:
-        ImFormatString(info->Desc, IM_ARRAYSIZE(info->Desc), "(void*)0x%p", data_id);
+        query->Strings.reserve(query->Strings.Size + 26);
+        consumed = ImFormatString(query->Strings.end(), query->Strings.Capacity - query->Strings.Size, "(void*)0x%p", data_id);
+        IM_ASSERT(0 < consumed && consumed < 26);
         break;
     case ImGuiDataType_ID:
-        if (info->Desc[0] != 0) // PushOverrideID() is often used to avoid hashing twice, which would lead to 2 calls to DebugHookIdInfo(). We prioritize the first one.
+        if (info->DescIndex != 0) // PushOverrideID() is often used to avoid hashing twice, which would lead to 2 calls to DebugHookIdInfo(). We prioritize the first one.
             return;
-        ImFormatString(info->Desc, IM_ARRAYSIZE(info->Desc), "0x%08X [override]", id);
+        query->Strings.reserve(query->Strings.Size + 22);
+        consumed = ImFormatString(query->Strings.end(), query->Strings.Capacity - query->Strings.Size, "0x%08X [override]", id);
+        IM_ASSERT(0 < consumed && consumed < 22);
         break;
     default:
         IM_ASSERT(0);
     }
+    info->DescIndex = query->Strings.Size;
+    query->Strings.resize(query->Strings.Size + consumed + 1);
     info->QuerySuccess = true;
     info->DataType = data_type;
 }
@@ -13454,11 +13473,11 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
 static int StackToolFormatLevelInfo(ImGuiIDQuery* query, int n, bool format_for_ui, char* buf, size_t buf_size)
 {
     ImGuiStackLevelInfo* info = &query->Results[n];
-    ImGuiWindow* window = (info->Desc[0] == 0 && n == 0) ? ImGui::FindWindowByID(info->ID) : NULL;
+    ImGuiWindow* window = (info->DescIndex == 0 && n == 0) ? ImGui::FindWindowByID(info->ID) : NULL;
     if (window)                                                                 // Source: window name (because the root ID don't call GetID() and so doesn't get hooked)
         return ImFormatString(buf, buf_size, format_for_ui ? "\"%s\" [window]" : "%s", window->Name);
     if (info->QuerySuccess)                                                     // Source: GetID() hooks (prioritize over ItemInfo() because we frequently use patterns like: PushID(str), Button("") where they both have same id)
-        return ImFormatString(buf, buf_size, (format_for_ui && info->DataType == ImGuiDataType_String) ? "\"%s\"" : "%s", info->Desc);
+        return ImFormatString(buf, buf_size, (format_for_ui && info->DataType == ImGuiDataType_String) ? "\"%s\"" : "%s", &query->Strings[info->DescIndex]);
     if (query->StackLevel < query->Results.Size)                                // Only start using fallback below when all queries are done, so during queries we don't flickering ??? markers.
         return (*buf = 0);
 #ifdef IMGUI_ENABLE_TEST_ENGINE
@@ -13485,7 +13504,8 @@ static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
     if (id == 0)
     {
         query->QueryId = id;
-        query->Results.clear();
+        query->Results.resize(0);
+        query->Strings.resize(0);
         query->StackLevel = 0;  // Implies "completed" state.
         return true;
     }
@@ -13497,6 +13517,7 @@ static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
         query->QueryId = id;
         query->StackLevel = -1;
         query->Results.resize(0);
+        query->Strings.resize(0);
         query->LastActiveFrame = g.FrameCount;
         g.DebugIdQueryCurrent = query;
     }

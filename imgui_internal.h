@@ -1548,7 +1548,7 @@ struct ImGuiStackLevelInfo
     ImS8                    QueryFrameCount;            // >= 1: Query in progress
     bool                    QuerySuccess;               // Obtained result from DebugHookIdInfo()
     ImGuiDataType           DataType : 8;
-    char                    Desc[57];                   // Arbitrarily sized buffer to hold a result (FIXME: could replace Results[] with a chunk stream?) FIXME: Now that we added CTRL+C this should be fixed.
+    int                     DescIndex;                  // Index into ImGuiIDQuery::Strings.
 
     ImGuiStackLevelInfo()   { memset(this, 0, sizeof(*this)); }
 };
@@ -1559,6 +1559,7 @@ struct ImGuiIDQuery
     int                     LastActiveFrame;
     int                     StackLevel;                 // -1: query stack and resize Results, >= 0: individual stack level
     ImVector<ImGuiStackLevelInfo> Results;
+    ImVector<char>          Strings;
 };
 
 // State for Stack tool queries
@@ -1848,7 +1849,6 @@ struct ImGuiContext
     ImGuiID                 DebugItemPickerBreakId;             // Will call IM_DEBUG_BREAK() when encountering this ID
     ImGuiMetricsConfig      DebugMetricsConfig;
     ImGuiStackTool          DebugStackTool;
-
     ImGuiIDQuery*           DebugIdQueryCurrent;
 
     // Misc
@@ -2007,6 +2007,7 @@ struct ImGuiContext
         DebugItemPickerActive = false;
         DebugItemPickerMouseButton = ImGuiMouseButton_Left;
         DebugItemPickerBreakId = 0;
+        DebugIdQueryCurrent = NULL;
 
         memset(FramerateSecPerFrame, 0, sizeof(FramerateSecPerFrame));
         FramerateSecPerFrameIdx = FramerateSecPerFrameCount = 0;
