@@ -1549,6 +1549,7 @@ struct ImGuiStackLevelInfo
     bool                    QuerySuccess;               // Obtained result from DebugHookIdInfo()
     ImGuiDataType           DataType : 8;
     int                     DescIndex;                  // Index into ImGuiIDQuery::Strings.
+    int                     Count;                      // Number of times this ID was seen. More than one indicates ID collision.
 
     ImGuiStackLevelInfo()   { memset(this, 0, sizeof(*this)); }
 };

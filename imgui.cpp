@@ -13417,6 +13417,7 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
         query->Results.resize(window->IDStack.Size + 1, ImGuiStackLevelInfo());
         for (int n = 0; n < window->IDStack.Size + 1; n++)
             query->Results[n].ID = (n < window->IDStack.Size) ? window->IDStack[n] : id;
+        query->Results[0].Count = 1;    // Window id, it is never inspected by this hook.
         query->Strings.resize(1);
         query->Strings.Data[0] = 0; // Default empty string for levels that are not yet initialized.
         return;
@@ -13464,6 +13465,7 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
         IM_ASSERT(0);
     }
     info->DescIndex = query->Strings.Size;
+    info->Count++;
     query->Strings.resize(query->Strings.Size + consumed + 1);
     info->QuerySuccess = true;
     info->DataType = data_type;
@@ -13601,7 +13603,11 @@ void ImGui::ShowStackToolWindow(bool* p_open)
     Text("or HoveredId: 0x%08X, ActiveId: 0x%08X", hovered_id, active_id);
 #endif
     SameLine();
-    MetricsHelpMarker("Hover an item with the mouse or enter hexadecimal ID manually to display elements of the ID Stack leading to the item's final ID.\nEach level of the stack correspond to a PushID() call.\nAll levels of the stack are hashed together to make the final ID of a widget (ID displayed at the bottom level of the stack).\nRead FAQ entry about the ID stack for details.");
+    MetricsHelpMarker("Hover an item with the mouse or enter hexadecimal ID manually to display elements of the ID Stack leading to the item's final ID.\n"
+                      "Each level of the stack correspond to a PushID() call.\n"
+                      "All levels of the stack are hashed together to make the final ID of a widget (ID displayed at the bottom level of the stack).\n"
+                      "IDs detected multiple times (Count > 1) indicate multiple widgets using same ID.\n"
+                      "Read FAQ entry about the ID stack for details.");
 
     // Even though DebugGetIdLabel() call does submit id query, an explicit call outside the table is required, because
     // number of rows in the table depends on query->Results, and when its empty DebugGetIdLabel() would not be called
@@ -13622,12 +13628,14 @@ void ImGui::ShowStackToolWindow(bool* p_open)
     }
 
     // Display decorated stack
-    if (BeginTable("##table", 3, ImGuiTableFlags_Borders))
+    if (BeginTable("##table", 4, ImGuiTableFlags_Borders))
     {
         const float id_width = CalcTextSize("0xDDDDDDDD").x;
+        const float count_width = CalcTextSize("Count").x;
         TableSetupColumn("Seed", ImGuiTableColumnFlags_WidthFixed, id_width);
         TableSetupColumn("PushID", ImGuiTableColumnFlags_WidthStretch);
         TableSetupColumn("Result", ImGuiTableColumnFlags_WidthFixed, id_width);
+        TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, count_width);
         TableHeadersRow();
         for (int n = 0; n < results->Size; n++)
         {
@@ -13640,6 +13648,10 @@ void ImGui::ShowStackToolWindow(bool* p_open)
             Text("0x%08X", info->ID);
             if (n == results->Size - 1)
                 TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
+            TableNextColumn();
+            Text("%d", info->Count);
+            if (info->Count > 1)
+                TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(IM_COL32(255, 0, 0, 50)));
         }
         if (results->Size == 0)
         {
@@ -13647,6 +13659,8 @@ void ImGui::ShowStackToolWindow(bool* p_open)
             TableSetColumnIndex(2);
             Text("0x%08X", auto_query_id);
             TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
+            TableNextColumn();
+            ImGui::TextUnformatted("0");
         }
         EndTable();
     }
