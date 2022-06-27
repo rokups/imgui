@@ -13353,6 +13353,20 @@ static ImGuiID DebugQueryIdFromHexString(const char* hex_id)
     return query_id;
 }
 
+static void DebugQueryIdClearAndComplete(ImGuiIDQuery* query)
+{
+    query->Results.resize(0);
+    query->Strings.resize(0);
+    query->StackLevel = 0;
+}
+
+static void DebugQueryIdClearAndRestart(ImGuiIDQuery* query)
+{
+    query->Results.resize(0);
+    query->Strings.resize(0);
+    query->StackLevel = -1;
+}
+
 // [DEBUG] Stack Tool: update queries. Called by NewFrame()
 void ImGui::UpdateDebugToolStackQueries()
 {
@@ -13396,6 +13410,7 @@ void ImGui::UpdateDebugToolStackQueries()
     {
         // Query was completed.
         g.DebugIdQueryCurrent = NULL;
+        g.DebugIdQueryBreakId = 0;
     }
 }
 
@@ -13447,7 +13462,7 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
         length = data_id_end ? (int)((const char*)data_id_end - (const char*)data_id) : (int)strlen((const char*)data_id);
         query->Strings.reserve(query->Strings.Size + length + 1);
         consumed = ImFormatString(query->Strings.end(), query->Strings.Capacity - query->Strings.Size, "%.*s", length, (const char*)data_id);
-        IM_ASSERT(0 < consumed && consumed < (query->Strings.Capacity - query->Strings.Size));
+        IM_ASSERT(length == consumed && consumed < (query->Strings.Capacity - query->Strings.Size));
         break;
     case ImGuiDataType_Pointer:
         query->Strings.reserve(query->Strings.Size + 26);
@@ -13469,6 +13484,10 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
     query->Strings.resize(query->Strings.Size + consumed + 1);
     info->QuerySuccess = true;
     info->DataType = data_type;
+
+    // Used for catching ID collisions and catches all IDs.
+    if (g.DebugIdQueryBreakId == id)
+        IM_DEBUG_BREAK();
 }
 
 // [DEBUG] Stack tool: format label of specified stack level
@@ -13506,9 +13525,7 @@ static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
     if (id == 0)
     {
         query->QueryId = id;
-        query->Results.resize(0);
-        query->Strings.resize(0);
-        query->StackLevel = 0;  // Implies "completed" state.
+        DebugQueryIdClearAndComplete(query);
         return true;
     }
 
@@ -13517,10 +13534,8 @@ static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
     if (g.DebugIdQueryCurrent == NULL)
     {
         query->QueryId = id;
-        query->StackLevel = -1;
-        query->Results.resize(0);
-        query->Strings.resize(0);
         query->LastActiveFrame = g.FrameCount;
+        DebugQueryIdClearAndRestart(query);
         g.DebugIdQueryCurrent = query;
     }
     return false;
@@ -13606,61 +13621,84 @@ void ImGui::ShowStackToolWindow(bool* p_open)
     MetricsHelpMarker("Hover an item with the mouse or enter hexadecimal ID manually to display elements of the ID Stack leading to the item's final ID.\n"
                       "Each level of the stack correspond to a PushID() call.\n"
                       "All levels of the stack are hashed together to make the final ID of a widget (ID displayed at the bottom level of the stack).\n"
-                      "IDs detected multiple times (Count > 1) indicate multiple widgets using same ID.\n"
+                      "Potential ID collisions are highlighted in red and conflicting items can be detected from table row context menu.\n"
                       "Read FAQ entry about the ID stack for details.");
 
     // Even though DebugGetIdLabel() call does submit id query, an explicit call outside the table is required, because
     // number of rows in the table depends on query->Results, and when its empty DebugGetIdLabel() would not be called
     // and no query would be submitted.
-    const ImGuiID auto_query_id = manual_id ? manual_id : hovered_id ? hovered_id : active_id;
-    DebugQueryId(auto_query_id, &tool->Query);
+    const ImGuiID auto_query_id = hovered_id ? hovered_id : active_id;
+    const ImGuiID query_id = manual_id ? manual_id : auto_query_id;
+    DebugQueryId(query_id, &tool->Query);
 
     // CTRL+C to copy path
     const float time_since_copy = (float)g.Time - tool->CopyToClipboardLastTime;
     Checkbox("Ctrl+C: copy path to clipboard", &tool->CopyToClipboardOnCtrlC);
     SameLine();
     TextColored((time_since_copy >= 0.0f && time_since_copy < 0.75f && ImFmod(time_since_copy, 0.25f) < 0.25f * 0.5f) ? ImVec4(1.f, 1.f, 0.3f, 1.f) : ImVec4(), "*COPIED*");
+    Checkbox("Ctrl+L: lock on to hovered id", &tool->LockIdOnCtrlL);
+    if (manual_id == 0 && IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        SetTooltip("Enter a manual ID or lock it using Ctrl+L.");
     ImVector<ImGuiStackLevelInfo>* results = &tool->Query.Results;
     if (tool->CopyToClipboardOnCtrlC && IsKeyDown(ImGuiKey_ModCtrl) && IsKeyPressed(ImGuiKey_C))
     {
         tool->CopyToClipboardLastTime = (float)g.Time;
-        SetClipboardText(DebugGetIdPath(auto_query_id, &tool->Query));
+        SetClipboardText(DebugGetIdPath(query_id, &tool->Query));
     }
+    if (tool->LockIdOnCtrlL && IsKeyDown(ImGuiKey_ModCtrl) && IsKeyPressed(ImGuiKey_L) && auto_query_id)
+        ImFormatString(tool->ManualQueryId, IM_ARRAYSIZE(tool->ManualQueryId), "0x%08X", auto_query_id);
 
     // Display decorated stack
-    if (BeginTable("##table", 4, ImGuiTableFlags_Borders))
+    if (BeginTable("##table", 3, ImGuiTableFlags_Borders))
     {
+        ImGuiTable* table = g.CurrentTable;
+        const ImU32 error_color = GetColorU32(IM_COL32(255, 0, 0, 50));
         const float id_width = CalcTextSize("0xDDDDDDDD").x;
-        const float count_width = CalcTextSize("Count").x;
         TableSetupColumn("Seed", ImGuiTableColumnFlags_WidthFixed, id_width);
         TableSetupColumn("PushID", ImGuiTableColumnFlags_WidthStretch);
         TableSetupColumn("Result", ImGuiTableColumnFlags_WidthFixed, id_width);
-        TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, count_width);
         TableHeadersRow();
         for (int n = 0; n < results->Size; n++)
         {
+            PushID(n);
             ImGuiStackLevelInfo* info = &results->Data[n];
             TableNextColumn();
+            ImRect row_rect(ImVec2(GetCursorScreenPos().x - table->CellPaddingX, table->RowPosY1), ImVec2());
             Text("0x%08X", (n > 0) ? results->Data[n - 1].ID : 0);
+            if (info->Count > 1)
+                TableSetBgColor(ImGuiTableBgTarget_CellBg, error_color);
             TableNextColumn();
-            TextUnformatted(DebugGetIdLabel(auto_query_id, &tool->Query, n));
+            TextUnformatted(DebugGetIdLabel(query_id, &tool->Query, n));
+            if (info->Count > 1)
+                TableSetBgColor(ImGuiTableBgTarget_CellBg, error_color);
             TableNextColumn();
             Text("0x%08X", info->ID);
             if (n == results->Size - 1)
                 TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
-            TableNextColumn();
-            Text("%d", info->Count);
-            if (info->Count > 1)
-                TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(IM_COL32(255, 0, 0, 50)));
+            else if (info->Count > 1)
+                TableSetBgColor(ImGuiTableBgTarget_CellBg, error_color);
+
+            row_rect.Max.x = table->WorkRect.Max.x;
+            row_rect.Max.y = table->RowPosY2;
+            if (IsWindowHovered() && row_rect.Contains(g.IO.MousePos) && IsMouseReleased(ImGuiMouseButton_Right))
+                OpenPopup("StackIDContextMenu");
+            if (BeginPopup("StackIDContextMenu"))
+            {
+                if (MenuItem("Break debugger on ID"))
+                {
+                    g.DebugIdQueryBreakId = info->ID;
+                    DebugQueryIdClearAndRestart(&tool->Query);
+                }
+                ImGui::EndPopup();
+            }
+            PopID();
         }
         if (results->Size == 0)
         {
             TableNextRow();
             TableSetColumnIndex(2);
-            Text("0x%08X", auto_query_id);
+            Text("0x%08X", query_id);
             TableSetBgColor(ImGuiTableBgTarget_CellBg, GetColorU32(ImGuiCol_Header));
-            TableNextColumn();
-            ImGui::TextUnformatted("0");
         }
         EndTable();
     }

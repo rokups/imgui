@@ -1567,6 +1567,7 @@ struct ImGuiIDQuery
 struct ImGuiStackTool
 {
     ImGuiIDQuery            Query;
+    bool                    LockIdOnCtrlL;
     bool                    CopyToClipboardOnCtrlC;
     float                   CopyToClipboardLastTime;
     char                    ManualQueryId[11];
@@ -1851,6 +1852,7 @@ struct ImGuiContext
     ImGuiMetricsConfig      DebugMetricsConfig;
     ImGuiStackTool          DebugStackTool;
     ImGuiIDQuery*           DebugIdQueryCurrent;
+    ImGuiID                 DebugIdQueryBreakId;                // Similar to DebugItemPickerBreakId, but works with arbitrary id, even when ItemAdd() is not called.
 
     // Misc
     float                   FramerateSecPerFrame[60];           // Calculate estimate of framerate for user over the last 60 frames..

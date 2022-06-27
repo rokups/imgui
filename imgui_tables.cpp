@@ -1167,7 +1167,9 @@ void ImGui::TableUpdateBorders(ImGuiTable* table)
         KeepAliveID(column_id);
 
         bool hovered = false, held = false;
+        PushOverrideID(column_id);  // Not strictly necessary. It registers column_id with debug id hook, making id available to stack tool.
         bool pressed = ButtonBehavior(hit_rect, column_id, &hovered, &held, ImGuiButtonFlags_FlattenChildren | ImGuiButtonFlags_AllowItemOverlap | ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_PressedOnDoubleClick | ImGuiButtonFlags_NoNavFocus);
+        PopID();
         if (pressed && IsMouseDoubleClicked(0))
         {
             TableSetColumnWidthAutoSingle(table, column_n);
