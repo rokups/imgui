@@ -505,3 +505,24 @@ jobs:
       run: |
         cd examples/example_android_opengl3/android
         gradle assembleDebug
+
+  TestEngine-Build:
+      # Sends a build request to test engine repository.
+      # Requires TEST_ENGINE_TOKEN actions secret with a token granting access to test engine repository.
+      runs-on: ubuntu-latest
+      env:
+        TEST_ENGINE_TOKEN: ${{ secrets.TEST_ENGINE_TOKEN }}
+      if: github.event_name == 'push'
+      needs:
+        - Windows
+        - Linux
+        - MacOS
+        - iOS
+        - Emscripten
+        - Android
+      steps:
+        - run: |
+            curl -X POST -H "Accept: application/vnd.github.v3+json"                                                   \
+            -H "Authorization: token ${{ env.TEST_ENGINE_TOKEN }}"                                                     \
+            https://api.github.com/repos/rokups/imgui_test_engine/dispatches                                           \
+            -d '{"event_type":"on-demand","client_payload":{}}'
