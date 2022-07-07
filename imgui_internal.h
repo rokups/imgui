@@ -1557,7 +1557,8 @@ struct ImGuiStackLevelInfo
 struct ImGuiIDQuery
 {
     ImGuiID                 QueryId;                    // ID to query details for
-    int                     LastActiveFrame;
+    int                     LastActiveFrame;            // Last frame when user submitted a query.
+    int                     LastIdSeenFrame;            // Last frame when id requested by the query was seen.
     int                     StackLevel;                 // -1: query stack and resize Results, >= 0: individual stack level
     ImVector<ImGuiStackLevelInfo> Results;
     ImVector<char>          Strings;
@@ -1853,6 +1854,7 @@ struct ImGuiContext
     ImGuiStackTool          DebugStackTool;
     ImGuiIDQuery*           DebugIdQueryCurrent;
     ImGuiID                 DebugIdQueryBreakId;                // Similar to DebugItemPickerBreakId, but works with arbitrary id, even when ItemAdd() is not called.
+    ImVector<char>          DebugIdTempBuffer;                  // Temporary text buffer. g.TempBuffer can not be used because pointer returned by DebugGetIdPath() is often used with ImGui::Text() which formats into g.TempBuffer.
 
     // Misc
     float                   FramerateSecPerFrame[60];           // Calculate estimate of framerate for user over the last 60 frames..

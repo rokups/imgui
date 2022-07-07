@@ -13379,7 +13379,9 @@ void ImGui::UpdateDebugToolStackQueries()
         return;
 
     // Two frames have passed and first ID was not found, query failed.
-    if (query->LastActiveFrame + 2 == g.FrameCount && query->StackLevel == -1)
+    const bool query_object_lost = query->LastActiveFrame + 1 < g.FrameCount;
+    const bool query_timeout = query->LastIdSeenFrame + 3 < g.FrameCount;
+    if (query_object_lost || query_timeout)
     {
         query->StackLevel = 0;
         query->Results.resize(0);
@@ -13422,17 +13424,18 @@ void ImGui::DebugHookIdInfo(ImGuiID id, ImGuiDataType data_type, const void* dat
     ImGuiIDQuery* query = g.DebugIdQueryCurrent;
     if (query == NULL)
         return;
-    query->LastActiveFrame = g.FrameCount;
+    query->LastIdSeenFrame = g.FrameCount;
 
     // Step 0: stack query
     // This assume that the ID was computed with the current ID stack, which tends to be the case for our widget.
     if (query->StackLevel == -1)
     {
-        query->StackLevel++;
+        query->StackLevel = 1;  // Start from first item id, skip window id as it isn't captured anyway.
         query->Results.resize(window->IDStack.Size + 1, ImGuiStackLevelInfo());
         for (int n = 0; n < window->IDStack.Size + 1; n++)
             query->Results[n].ID = (n < window->IDStack.Size) ? window->IDStack[n] : id;
-        query->Results[0].Count = 1;    // Window id, it is never inspected by this hook.
+        query->Results[0].Count = 1;            // Window id, it is never inspected by this hook.
+        query->Results[0].QuerySuccess = true;
         query->Strings.resize(1);
         query->Strings.Data[0] = 0; // Default empty string for levels that are not yet initialized.
         return;
@@ -13518,6 +13521,7 @@ static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
     if (query->QueryId == id && query->StackLevel == query->Results.Size)
         return true;    // Completed, do not try to submit a query.
 
+    query->LastActiveFrame = g.FrameCount;
     if (query == g.DebugIdQueryCurrent)
         return false;   // Query is in progress. Wait until it completes.
 
@@ -13534,7 +13538,7 @@ static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
     if (g.DebugIdQueryCurrent == NULL)
     {
         query->QueryId = id;
-        query->LastActiveFrame = g.FrameCount;
+        query->LastIdSeenFrame = g.FrameCount;
         DebugQueryIdClearAndRestart(query);
         g.DebugIdQueryCurrent = query;
     }
@@ -13547,12 +13551,12 @@ const char* ImGui::DebugGetIdLabel(ImGuiID id, ImGuiIDQuery* query, int id_stack
     if (id == 0 || !DebugQueryId(id, query))
         return "";
 
-    int index = id_stack_lvl < 0 ? ((int)query->Results.Size - id_stack_lvl) : id_stack_lvl;
+    int index = id_stack_lvl < 0 ? ((int)query->Results.Size + id_stack_lvl) : id_stack_lvl;
     if (0 <= index && index < query->Results.Size)
     {
-        g.TempBuffer.resize(255);
-        StackToolFormatLevelInfo(query, index, false, g.TempBuffer.Data, g.TempBuffer.Size);
-        return g.TempBuffer.Data;
+        g.DebugIdTempBuffer.resize(255);
+        StackToolFormatLevelInfo(query, index, false, g.DebugIdTempBuffer.Data, g.DebugIdTempBuffer.Size);
+        return g.DebugIdTempBuffer.Data;
     }
     return "";
 }
@@ -13563,9 +13567,10 @@ const char* ImGui::DebugGetIdPath(ImGuiID id, ImGuiIDQuery* query)
     if (id == 0 || !DebugQueryId(id, query))
         return "";
 
-    g.TempBuffer.resize(256);
-    char* p = g.TempBuffer.Data;
-    char* p_end = p + g.TempBuffer.Size;
+    ImVector<char>& buf = g.DebugIdTempBuffer;
+    buf.resize(256);
+    char* p = buf.Data;
+    char* p_end = p + buf.Size;
     for (int stack_n = 0; stack_n < query->Results.Size; stack_n++)
     {
         *p++ = '/';
@@ -13575,10 +13580,10 @@ const char* ImGui::DebugGetIdPath(ImGuiID id, ImGuiIDQuery* query)
         {
             if (p + 3 >= p_end)
             {
-                int offset = p - g.TempBuffer.Data;
-                g.TempBuffer.resize(g.TempBuffer.Size + 64);
-                p = g.TempBuffer.Data + offset;
-                p_end = g.TempBuffer.end();
+                int offset = p - buf.Data;
+                buf.resize(buf.Size + 64);
+                p = buf.Data + offset;
+                p_end = buf.end();
             }
             if (level_desc[n] == '/')
                 *p++ = '\\';
@@ -13586,7 +13591,7 @@ const char* ImGui::DebugGetIdPath(ImGuiID id, ImGuiIDQuery* query)
         }
     }
     *p = '\0';
-    return g.TempBuffer.Data;
+    return buf.Data;
 }
 
 // Stack Tool: Display UI
