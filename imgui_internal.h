@@ -2944,6 +2944,7 @@ namespace ImGui
     IMGUI_API void          DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* viewport, const ImRect& bb);
     IMGUI_API const char*   DebugGetIdLabel(ImGuiID id, ImGuiIDQuery* query, int id_stack_lvl = -1);
     IMGUI_API const char*   DebugGetIdPath(ImGuiID id, ImGuiIDQuery* query);
+    IMGUI_API bool          DebugQueryId(ImGuiID id, ImGuiIDQuery* query);
 
     // Obsolete functions
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS

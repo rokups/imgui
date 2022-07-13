@@ -13514,7 +13514,7 @@ static int StackToolFormatLevelInfo(ImGuiIDQuery* query, int n, bool format_for_
 // [DEBUG] Stack tool: try to submit a query for stack of specified id. Function returns true when query is completed
 // successfully. Query pointer must remain valid until completion, which may take multiple frames. If a different id is
 // submitted with in-progress query object, new query will not be started until previous one completes or fails.
-static bool DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
+bool ImGui::DebugQueryId(ImGuiID id, ImGuiIDQuery* query)
 {
     ImGuiContext& g = *GImGui;
 
