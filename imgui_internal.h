@@ -1556,10 +1556,10 @@ struct ImGuiStackLevelInfo
 
 struct ImGuiIDQuery
 {
-    ImGuiID                 QueryId;                    // ID to query details for
-    int                     LastActiveFrame;            // Last frame when user submitted a query.
-    int                     LastIdSeenFrame;            // Last frame when id requested by the query was seen.
-    int                     StackLevel;                 // -1: query stack and resize Results, >= 0: individual stack level
+    ImGuiID                 QueryId = 0;                 // ID to query details for
+    int                     LastActiveFrame = 0;         // Last frame when user submitted a query.
+    int                     LastIdSeenFrame = 0;         // Last frame when id requested by the query was seen.
+    int                     StackLevel = 0;              // -1: query stack and resize Results, >= 0: individual stack level
     ImVector<ImGuiStackLevelInfo> Results;
     ImVector<char>          Strings;
 };
@@ -2013,6 +2013,7 @@ struct ImGuiContext
         DebugItemPickerMouseButton = ImGuiMouseButton_Left;
         DebugItemPickerBreakId = 0;
         DebugIdQueryCurrent = NULL;
+        DebugIdQueryBreakId = 0;
 
         memset(FramerateSecPerFrame, 0, sizeof(FramerateSecPerFrame));
         FramerateSecPerFrameIdx = FramerateSecPerFrameCount = 0;
