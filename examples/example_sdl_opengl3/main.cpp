@@ -95,6 +95,9 @@ int main(int, char**)
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
+    ImGuiStyle& style = ImGui::GetStyle();
+    const int my_fancy_color = style.RegisterUserStyleColor("MyFancyColor", ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+
     // Main loop
     bool done = false;
     while (!done)
@@ -143,6 +146,15 @@ int main(int, char**)
             ImGui::Text("counter = %d", counter);
 
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            draw_list->AddText(ImGui::GetCursorScreenPos(), ImColor(style.Colors[my_fancy_color]), "Foo");
+            ImGui::NewLine();
+
+            ImGui::PushStyleColor(my_fancy_color, ImVec4(0, 1, 0, 1));
+            draw_list->AddText(ImGui::GetCursorScreenPos(), ImColor(style.Colors[my_fancy_color]), "Bar");
+            ImGui::PopStyleColor();
+
             ImGui::End();
         }
 
