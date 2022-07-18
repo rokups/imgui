@@ -6233,13 +6233,13 @@ void ImGui::ShowStyleEditor(ImGuiStyle* ref)
                     ImGui::LogToClipboard();
                 else
                     ImGui::LogToTTY();
-                ImGui::LogText("ImVec4* colors = ImGui::GetStyle().Colors;" IM_NEWLINE);
-                for (int i = 0; i < ImGuiCol_COUNT; i++)
+                ImGui::LogText("ImVec4* colors = ImGui::GetStyle().Colors.Data;" IM_NEWLINE);
+                for (int i = 0; i < style.Colors.Size; i++)
                 {
                     const ImVec4& col = style.Colors[i];
                     const char* name = ImGui::GetStyleColorName(i);
                     if (!output_only_modified || memcmp(&col, &ref->Colors[i], sizeof(ImVec4)) != 0)
-                        ImGui::LogText("colors[ImGuiCol_%s]%*s= ImVec4(%.2ff, %.2ff, %.2ff, %.2ff);" IM_NEWLINE,
+                        ImGui::LogText("colors[ImGui::GetStyleColorIndex(\"%s\")]%*s= ImVec4(%.2ff, %.2ff, %.2ff, %.2ff);" IM_NEWLINE,
                             name, 23 - (int)strlen(name), "", col.x, col.y, col.z, col.w);
                 }
                 ImGui::LogFinish();
@@ -6261,7 +6261,7 @@ void ImGui::ShowStyleEditor(ImGuiStyle* ref)
 
             ImGui::BeginChild("##colors", ImVec2(0, 0), true, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NavFlattened);
             ImGui::PushItemWidth(-160);
-            for (int i = 0; i < ImGuiCol_COUNT; i++)
+            for (int i = 0; i < style.Colors.Size; i++)
             {
                 const char* name = ImGui::GetStyleColorName(i);
                 if (!filter.PassFilter(name))
@@ -6466,8 +6466,9 @@ static void ShowExampleMenuFile()
     IMGUI_DEMO_MARKER("Examples/Menu/Colors");
     if (ImGui::BeginMenu("Colors"))
     {
+        ImGuiStyle& style = ImGui::GetStyle();
         float sz = ImGui::GetTextLineHeight();
-        for (int i = 0; i < ImGuiCol_COUNT; i++)
+        for (int i = 0; i < style.Colors.Size; i++)
         {
             const char* name = ImGui::GetStyleColorName((ImGuiCol)i);
             ImVec2 p = ImGui::GetCursorScreenPos();

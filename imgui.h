@@ -856,6 +856,7 @@ namespace ImGui
     IMGUI_API int           GetFrameCount();                                                    // get global imgui frame count. incremented by 1 every frame.
     IMGUI_API ImDrawListSharedData* GetDrawListSharedData();                                    // you may use this when creating your own ImDrawList instances.
     IMGUI_API const char*   GetStyleColorName(ImGuiCol idx);                                    // get a string corresponding to the enum value (for display, saving, etc.).
+    IMGUI_API ImGuiCol      GetStyleColorIndex(const char* name);                               // get a color index corresponding to the color name (for display, saving, etc.).
     IMGUI_API void          SetStateStorage(ImGuiStorage* storage);                             // replace current window storage with our own (if you want to manipulate it yourself, typically clear subsection of it)
     IMGUI_API ImGuiStorage* GetStateStorage();
     IMGUI_API bool          BeginChildFrame(ImGuiID id, const ImVec2& size, ImGuiWindowFlags flags = 0); // helper to create a child window / scrolling region that looks like a normal widget frame
@@ -1562,8 +1563,9 @@ enum ImGuiCol_
     ImGuiCol_NavWindowingHighlight, // Highlight window when using CTRL+TAB
     ImGuiCol_NavWindowingDimBg,     // Darken/colorize entire screen behind the CTRL+TAB window list, when active
     ImGuiCol_ModalWindowDimBg,      // Darken/colorize entire screen behind a modal window, when one is active
-    ImGuiCol_COUNT
+    ImGuiCol_USER                   // First color index reserved for user-defined sytle colors
 };
+#define ImGuiCol_COUNT ImGui::GetStyle().Colors.Size
 
 // Enumeration for PushStyleVar() / PopStyleVar() to temporarily modify the ImGuiStyle structure.
 // - The enum only refers to fields of ImGuiStyle which makes sense to be pushed/popped inside UI code.
@@ -1861,10 +1863,12 @@ struct ImGuiStyle
     bool        AntiAliasedFill;            // Enable anti-aliased edges around filled shapes (rounded rectangles, circles, etc.). Disable if you are really tight on CPU/GPU. Latched at the beginning of the frame (copied to ImDrawList).
     float       CurveTessellationTol;       // Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
     float       CircleTessellationMaxError; // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
-    ImVec4      Colors[ImGuiCol_COUNT];
+    ImVector<ImVec4> Colors;
+    ImVector<const char*> ColorNames;
 
     IMGUI_API ImGuiStyle();
     IMGUI_API void ScaleAllSizes(float scale_factor);
+    IMGUI_API ImGuiCol RegisterUserStyleColor(const char* name, ImVec4 color = ImVec4());   // Register a user-defined style color. Returns unique color identifier that can be used with PushStyleColor(result, ...) or to access current color value as style.Colors[result].
 };
 
 //-----------------------------------------------------------------------------

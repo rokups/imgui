@@ -935,6 +935,8 @@ static ImVec2           CalcNextScrollFromScrollTargetAndClamp(ImGuiWindow* wind
 static void             AddDrawListToDrawData(ImVector<ImDrawList*>* out_list, ImDrawList* draw_list);
 static void             AddWindowToSortBuffer(ImVector<ImGuiWindow*>* out_sorted_windows, ImGuiWindow* window);
 
+static void             ImGuiStyle_InitializeDefaultColorNames(ImGuiStyle* style);
+
 // Settings
 static void             WindowSettingsHandler_ClearAll(ImGuiContext*, ImGuiSettingsHandler*);
 static void*            WindowSettingsHandler_ReadOpen(ImGuiContext*, ImGuiSettingsHandler*, const char* name);
@@ -1084,6 +1086,10 @@ ImGuiStyle::ImGuiStyle()
     CurveTessellationTol    = 1.25f;            // Tessellation tolerance when using PathBezierCurveTo() without a specific number of segments. Decrease for highly tessellated curves (higher quality, more polygons), increase to reduce quality.
     CircleTessellationMaxError = 0.30f;         // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
 
+    Colors.resize(ImGuiCol_USER);
+    ColorNames.resize(ImGuiCol_USER);
+    ImGuiStyle_InitializeDefaultColorNames(this);
+
     // Default theme
     ImGui::StyleColorsDark(this);
 }
@@ -1115,6 +1121,15 @@ void ImGuiStyle::ScaleAllSizes(float scale_factor)
     DisplayWindowPadding = ImFloor(DisplayWindowPadding * scale_factor);
     DisplaySafeAreaPadding = ImFloor(DisplaySafeAreaPadding * scale_factor);
     MouseCursorScale = ImFloor(MouseCursorScale * scale_factor);
+}
+
+ImGuiCol ImGuiStyle::RegisterUserStyleColor(const char* name, ImVec4 color)
+{
+    IM_ASSERT(Colors.Size == ColorNames.Size);
+    int color_index = Colors.Size;
+    Colors.push_back(color);
+    ColorNames.push_back(name);
+    return (ImGuiCol)color_index;
 }
 
 ImGuiIO::ImGuiIO()
@@ -2932,65 +2947,76 @@ void ImGui::PopStyleVar(int count)
 
 const char* ImGui::GetStyleColorName(ImGuiCol idx)
 {
-    // Create switch-case from enum with regexp: ImGuiCol_{.*}, --> case ImGuiCol_\1: return "\1";
-    switch (idx)
-    {
-    case ImGuiCol_Text: return "Text";
-    case ImGuiCol_TextDisabled: return "TextDisabled";
-    case ImGuiCol_WindowBg: return "WindowBg";
-    case ImGuiCol_ChildBg: return "ChildBg";
-    case ImGuiCol_PopupBg: return "PopupBg";
-    case ImGuiCol_Border: return "Border";
-    case ImGuiCol_BorderShadow: return "BorderShadow";
-    case ImGuiCol_FrameBg: return "FrameBg";
-    case ImGuiCol_FrameBgHovered: return "FrameBgHovered";
-    case ImGuiCol_FrameBgActive: return "FrameBgActive";
-    case ImGuiCol_TitleBg: return "TitleBg";
-    case ImGuiCol_TitleBgActive: return "TitleBgActive";
-    case ImGuiCol_TitleBgCollapsed: return "TitleBgCollapsed";
-    case ImGuiCol_MenuBarBg: return "MenuBarBg";
-    case ImGuiCol_ScrollbarBg: return "ScrollbarBg";
-    case ImGuiCol_ScrollbarGrab: return "ScrollbarGrab";
-    case ImGuiCol_ScrollbarGrabHovered: return "ScrollbarGrabHovered";
-    case ImGuiCol_ScrollbarGrabActive: return "ScrollbarGrabActive";
-    case ImGuiCol_CheckMark: return "CheckMark";
-    case ImGuiCol_SliderGrab: return "SliderGrab";
-    case ImGuiCol_SliderGrabActive: return "SliderGrabActive";
-    case ImGuiCol_Button: return "Button";
-    case ImGuiCol_ButtonHovered: return "ButtonHovered";
-    case ImGuiCol_ButtonActive: return "ButtonActive";
-    case ImGuiCol_Header: return "Header";
-    case ImGuiCol_HeaderHovered: return "HeaderHovered";
-    case ImGuiCol_HeaderActive: return "HeaderActive";
-    case ImGuiCol_Separator: return "Separator";
-    case ImGuiCol_SeparatorHovered: return "SeparatorHovered";
-    case ImGuiCol_SeparatorActive: return "SeparatorActive";
-    case ImGuiCol_ResizeGrip: return "ResizeGrip";
-    case ImGuiCol_ResizeGripHovered: return "ResizeGripHovered";
-    case ImGuiCol_ResizeGripActive: return "ResizeGripActive";
-    case ImGuiCol_Tab: return "Tab";
-    case ImGuiCol_TabHovered: return "TabHovered";
-    case ImGuiCol_TabActive: return "TabActive";
-    case ImGuiCol_TabUnfocused: return "TabUnfocused";
-    case ImGuiCol_TabUnfocusedActive: return "TabUnfocusedActive";
-    case ImGuiCol_PlotLines: return "PlotLines";
-    case ImGuiCol_PlotLinesHovered: return "PlotLinesHovered";
-    case ImGuiCol_PlotHistogram: return "PlotHistogram";
-    case ImGuiCol_PlotHistogramHovered: return "PlotHistogramHovered";
-    case ImGuiCol_TableHeaderBg: return "TableHeaderBg";
-    case ImGuiCol_TableBorderStrong: return "TableBorderStrong";
-    case ImGuiCol_TableBorderLight: return "TableBorderLight";
-    case ImGuiCol_TableRowBg: return "TableRowBg";
-    case ImGuiCol_TableRowBgAlt: return "TableRowBgAlt";
-    case ImGuiCol_TextSelectedBg: return "TextSelectedBg";
-    case ImGuiCol_DragDropTarget: return "DragDropTarget";
-    case ImGuiCol_NavHighlight: return "NavHighlight";
-    case ImGuiCol_NavWindowingHighlight: return "NavWindowingHighlight";
-    case ImGuiCol_NavWindowingDimBg: return "NavWindowingDimBg";
-    case ImGuiCol_ModalWindowDimBg: return "ModalWindowDimBg";
-    }
-    IM_ASSERT(0);
-    return "Unknown";
+    ImGuiContext& g = *GImGui;
+    return g.Style.ColorNames[idx];
+}
+
+ImGuiCol ImGui::GetStyleColorIndex(const char* name)
+{
+    ImGuiContext& g = *GImGui;
+    for (int i = 0; i < g.Style.ColorNames.Size; i++)
+        if (strcmp(g.Style.ColorNames[i], name) == 0)
+            return i;
+    IM_ASSERT(0);   // Specified color name not found.
+    return g.Style.ColorNames.Size;
+}
+
+static void ImGuiStyle_InitializeDefaultColorNames(ImGuiStyle* style)
+{
+    // Initialize array enum with regexp: ImGuiCol_{.*}, --> style->ColorNames[ImGuiCol_\1] = "\1";
+    style->ColorNames[ImGuiCol_Text] = "Text";
+    style->ColorNames[ImGuiCol_TextDisabled] = "TextDisabled";
+    style->ColorNames[ImGuiCol_WindowBg] = "WindowBg";
+    style->ColorNames[ImGuiCol_ChildBg] = "ChildBg";
+    style->ColorNames[ImGuiCol_PopupBg] = "PopupBg";
+    style->ColorNames[ImGuiCol_Border] = "Border";
+    style->ColorNames[ImGuiCol_BorderShadow] = "BorderShadow";
+    style->ColorNames[ImGuiCol_FrameBg] = "FrameBg";
+    style->ColorNames[ImGuiCol_FrameBgHovered] = "FrameBgHovered";
+    style->ColorNames[ImGuiCol_FrameBgActive] = "FrameBgActive";
+    style->ColorNames[ImGuiCol_TitleBg] = "TitleBg";
+    style->ColorNames[ImGuiCol_TitleBgActive] = "TitleBgActive";
+    style->ColorNames[ImGuiCol_TitleBgCollapsed] = "TitleBgCollapsed";
+    style->ColorNames[ImGuiCol_MenuBarBg] = "MenuBarBg";
+    style->ColorNames[ImGuiCol_ScrollbarBg] = "ScrollbarBg";
+    style->ColorNames[ImGuiCol_ScrollbarGrab] = "ScrollbarGrab";
+    style->ColorNames[ImGuiCol_ScrollbarGrabHovered] = "ScrollbarGrabHovered";
+    style->ColorNames[ImGuiCol_ScrollbarGrabActive] = "ScrollbarGrabActive";
+    style->ColorNames[ImGuiCol_CheckMark] = "CheckMark";
+    style->ColorNames[ImGuiCol_SliderGrab] = "SliderGrab";
+    style->ColorNames[ImGuiCol_SliderGrabActive] = "SliderGrabActive";
+    style->ColorNames[ImGuiCol_Button] = "Button";
+    style->ColorNames[ImGuiCol_ButtonHovered] = "ButtonHovered";
+    style->ColorNames[ImGuiCol_ButtonActive] = "ButtonActive";
+    style->ColorNames[ImGuiCol_Header] = "Header";
+    style->ColorNames[ImGuiCol_HeaderHovered] = "HeaderHovered";
+    style->ColorNames[ImGuiCol_HeaderActive] = "HeaderActive";
+    style->ColorNames[ImGuiCol_Separator] = "Separator";
+    style->ColorNames[ImGuiCol_SeparatorHovered] = "SeparatorHovered";
+    style->ColorNames[ImGuiCol_SeparatorActive] = "SeparatorActive";
+    style->ColorNames[ImGuiCol_ResizeGrip] = "ResizeGrip";
+    style->ColorNames[ImGuiCol_ResizeGripHovered] = "ResizeGripHovered";
+    style->ColorNames[ImGuiCol_ResizeGripActive] = "ResizeGripActive";
+    style->ColorNames[ImGuiCol_Tab] = "Tab";
+    style->ColorNames[ImGuiCol_TabHovered] = "TabHovered";
+    style->ColorNames[ImGuiCol_TabActive] = "TabActive";
+    style->ColorNames[ImGuiCol_TabUnfocused] = "TabUnfocused";
+    style->ColorNames[ImGuiCol_TabUnfocusedActive] = "TabUnfocusedActive";
+    style->ColorNames[ImGuiCol_PlotLines] = "PlotLines";
+    style->ColorNames[ImGuiCol_PlotLinesHovered] = "PlotLinesHovered";
+    style->ColorNames[ImGuiCol_PlotHistogram] = "PlotHistogram";
+    style->ColorNames[ImGuiCol_PlotHistogramHovered] = "PlotHistogramHovered";
+    style->ColorNames[ImGuiCol_TableHeaderBg] = "TableHeaderBg";
+    style->ColorNames[ImGuiCol_TableBorderStrong] = "TableBorderStrong";
+    style->ColorNames[ImGuiCol_TableBorderLight] = "TableBorderLight";
+    style->ColorNames[ImGuiCol_TableRowBg] = "TableRowBg";
+    style->ColorNames[ImGuiCol_TableRowBgAlt] = "TableRowBgAlt";
+    style->ColorNames[ImGuiCol_TextSelectedBg] = "TextSelectedBg";
+    style->ColorNames[ImGuiCol_DragDropTarget] = "DragDropTarget";
+    style->ColorNames[ImGuiCol_NavHighlight] = "NavHighlight";
+    style->ColorNames[ImGuiCol_NavWindowingHighlight] = "NavWindowingHighlight";
+    style->ColorNames[ImGuiCol_NavWindowingDimBg] = "NavWindowingDimBg";
+    style->ColorNames[ImGuiCol_ModalWindowDimBg] = "ModalWindowDimBg";
 }
 
 
