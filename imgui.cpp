@@ -16403,7 +16403,8 @@ void ImGui::SetWindowDock(ImGuiWindow* window, ImGuiID dock_id, ImGuiCond cond)
 
     if (window->DockNode)
         DockNodeRemoveWindow(window->DockNode, window, 0);
-    window->DockId = dock_id;
+    if (dock_id)
+        window->DockId = dock_id;
 }
 
 // Create an explicit dockspace node within an existing window. Also expose dock node flags and creates a CentralNode by default.
