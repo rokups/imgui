@@ -1557,9 +1557,9 @@ struct ImGuiStackLevelInfo
 struct ImGuiIDQuery
 {
     ImGuiID                 QueryId = 0;                 // ID to query details for
-    int                     LastActiveFrame = 0;         // Last frame when user submitted a query.
-    int                     LastIdSeenFrame = 0;         // Last frame when id requested by the query was seen.
-    int                     StackLevel = 0;              // -1: query stack and resize Results, >= 0: individual stack level
+    int                     LastActiveFrame = 0;         // Last frame when user submitted a query (used for discarding no longer used queries)
+    int                     LastIdSeenFrame = 0;         // Last frame when id requested by the query was seen (used for timing out a request with missing item id)
+    int                     StackLevel = -1;             // -1: query stack and resize Results, >= 0: individual stack level
     ImVector<ImGuiStackLevelInfo> Results;
     ImVector<char>          Strings;
 };
@@ -1567,7 +1567,6 @@ struct ImGuiIDQuery
 // State for Stack tool queries
 struct ImGuiStackTool
 {
-    ImGuiIDQuery            Query;
     bool                    LockIdOnCtrlL;
     bool                    CopyToClipboardOnCtrlC;
     float                   CopyToClipboardLastTime;
@@ -1852,8 +1851,9 @@ struct ImGuiContext
     ImGuiID                 DebugItemPickerBreakId;             // Will call IM_DEBUG_BREAK() when encountering this ID
     ImGuiMetricsConfig      DebugMetricsConfig;
     ImGuiStackTool          DebugStackTool;
-    ImGuiIDQuery*           DebugIdQueryCurrent;
-    ImGuiID                 DebugIdQueryBreakId;                // Similar to DebugItemPickerBreakId, but works with arbitrary id, even when ItemAdd() is not called.
+    ImVector<ImGuiIDQuery>  DebugQueryIdQueue;
+    ImGuiID                 DebugQueryCurrentId;
+    ImGuiID                 DebugQueryBreakId;                  // Similar to DebugItemPickerBreakId, but works with arbitrary id, even when ItemAdd() is not called.
     ImVector<char>          DebugIdTempBuffer;                  // Temporary text buffer. g.TempBuffer can not be used because pointer returned by DebugGetIdPath() is often used with ImGui::Text() which formats into g.TempBuffer.
 
     // Misc
@@ -2012,8 +2012,8 @@ struct ImGuiContext
         DebugItemPickerActive = false;
         DebugItemPickerMouseButton = ImGuiMouseButton_Left;
         DebugItemPickerBreakId = 0;
-        DebugIdQueryCurrent = NULL;
-        DebugIdQueryBreakId = 0;
+        DebugQueryCurrentId = 0;
+        DebugQueryBreakId = 0;
 
         memset(FramerateSecPerFrame, 0, sizeof(FramerateSecPerFrame));
         FramerateSecPerFrameIdx = FramerateSecPerFrameCount = 0;
@@ -2943,9 +2943,8 @@ namespace ImGui
     IMGUI_API void          DebugNodeWindowsListByBeginStackParent(ImGuiWindow** windows, int windows_size, ImGuiWindow* parent_in_begin_stack);
     IMGUI_API void          DebugNodeViewport(ImGuiViewportP* viewport);
     IMGUI_API void          DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* viewport, const ImRect& bb);
-    IMGUI_API const char*   DebugGetIdLabel(ImGuiID id, ImGuiIDQuery* query, int id_stack_lvl = -1);
-    IMGUI_API const char*   DebugGetIdPath(ImGuiID id, ImGuiIDQuery* query);
-    IMGUI_API bool          DebugQueryId(ImGuiID id, ImGuiIDQuery* query);
+    IMGUI_API const char*   DebugGetIdLabel(ImGuiID id, const char* default_val = "");  // Takes multiple frames to complete. Returns a label associated with specified ID, default_val when query is in progress and empty string if ID is not found.
+    IMGUI_API const char*   DebugGetIdPath(ImGuiID id, const char* default_val = "");   // Takes multiple frames to complete. Returns a path associated with specified ID, default_val when query is in progress and empty string if ID is not found.
 
     // Obsolete functions
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
