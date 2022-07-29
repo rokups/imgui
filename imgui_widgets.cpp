@@ -3685,8 +3685,9 @@ static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const Im
     const int text_len = obj->CurLenW;
     IM_ASSERT(pos <= text_len);
 
+    const int zb = (obj->Flags & ImGuiInputTextFlags_NoZeroTerminator) != 0 ? 0 : 1;  // Zero bytes
     const int new_text_len_utf8 = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
-    if (!is_resizable && (new_text_len_utf8 + obj->CurLenA + 1 > obj->BufCapacityA))
+    if (!is_resizable && (new_text_len_utf8 + obj->CurLenA + zb > obj->BufCapacityA))
         return false;
 
     // Grow internal buffer if needed
@@ -3774,7 +3775,9 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
     const char* src = Buf + pos + bytes_count;
     while (char c = *src++)
         *dst++ = c;
-    *dst = '\0';
+
+    if ((Flags & ImGuiInputTextFlags_NoZeroTerminator) == 0)
+        *dst = '\0';
 
     if (CursorPos >= pos + bytes_count)
         CursorPos -= bytes_count;
@@ -3787,9 +3790,10 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 
 void ImGuiInputTextCallbackData::InsertChars(int pos, ImStrv new_text)
 {
+    const bool use_zero_terminator = (Flags & ImGuiInputTextFlags_NoZeroTerminator) == 0;
     const bool is_resizable = (Flags & ImGuiInputTextFlags_CallbackResize) != 0;
     const int new_text_len = (int)new_text.length();
-    if (new_text_len + BufTextLen >= BufSize)
+    if (new_text_len + BufTextLen >= BufSize + (use_zero_terminator ? 0 : 1))
     {
         if (!is_resizable)
             return;
@@ -3809,7 +3813,9 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, ImStrv new_text)
         memmove(Buf + pos + new_text_len, Buf + pos, (size_t)(BufTextLen - pos));
     if (new_text_len > 0)
         memcpy(Buf + pos, new_text.Begin, (size_t)new_text_len * sizeof(char));
-    Buf[BufTextLen + new_text_len] = '\0';
+
+    if (use_zero_terminator)
+        Buf[BufTextLen + new_text_len] = '\0';
 
     if (CursorPos >= pos)
         CursorPos += new_text_len;
@@ -3974,6 +3980,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
     const ImGuiStyle& style = g.Style;
 
     const bool RENDER_SELECTION_WHEN_INACTIVE = false;
+    const bool is_zero_terminated = (flags & ImGuiInputTextFlags_NoZeroTerminator) == 0;
     const bool is_multiline = (flags & ImGuiInputTextFlags_Multiline) != 0;
     const bool is_readonly = (flags & ImGuiInputTextFlags_ReadOnly) != 0;
     const bool is_password = (flags & ImGuiInputTextFlags_Password) != 0;
@@ -4067,9 +4074,10 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
 
         // Take a copy of the initial buffer value (both in original UTF-8 format and converted to wchar)
         // From the moment we focused we are ignoring the content of 'buf' (unless we are in read-only mode)
-        const int buf_len = (int)strlen(buf);
+        const int buf_len = (!is_zero_terminated && buf[buf_size - 1]) ? buf_size : (int)strlen(buf);
         state->InitialTextA.resize(buf_len + 1);    // UTF-8. we use +1 to make sure that .Data is always pointing to at least an empty string.
-        memcpy(state->InitialTextA.Data, buf, buf_len + 1);
+        memcpy(state->InitialTextA.Data, buf, buf_len);
+        state->InitialTextA.Data[buf_len] = 0;
 
         // Preserve cursor position and undo/redo stack if we come back to same widget
         // FIXME: Since we reworked this on 2022/06, may want to differenciate recycle_cursor vs recycle_undostate?
@@ -4083,7 +4091,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
         state->TextW.resize(buf_size + 1);          // wchar count <= UTF-8 count. we use +1 to make sure that .Data is always pointing to at least an empty string.
         state->TextA.resize(0);
         state->TextAIsValid = false;                // TextA is not valid yet (we will display buf until then)
-        state->CurLenW = ImTextStrFromUtf8(state->TextW.Data, buf_size, buf, NULL, &buf_end);
+        state->CurLenW = ImTextStrFromUtf8(state->TextW.Data, buf_size + (is_zero_terminated ? 0 : 1), buf, NULL, &buf_end);    // ImTextStrFromUtf8() assumes last byte is zero and ignores it.
         state->CurLenA = (int)(buf_end - buf);      // We can't get the result from ImStrncpy() above because it is not UTF-8 aware. Here we'll cut off malformed UTF-8.
 
         if (recycle_state)
@@ -4440,7 +4448,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
         if (cancel_edit)
         {
             // Restore initial value. Only return true if restoring to the initial value changes the current buffer contents.
-            if (!is_readonly && strcmp(buf, state->InitialTextA.Data) != 0)
+            if (!is_readonly && strncmp(buf, state->InitialTextA.Data, ImMin(ImMax(buf_size, 1), state->InitialTextA.Size)) != 0)
             {
                 // Push records into the undo stack so we can CTRL+Z the revert operation itself
                 apply_new_text = state->InitialTextA.Data;
@@ -4554,7 +4562,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
             }
 
             // Will copy result string if modified
-            if (!is_readonly && strcmp(state->TextA.Data, buf) != 0)
+            if (!is_readonly && strncmp(state->TextA.Data, buf, ImMin(ImMax(buf_size, 1), state->TextA.Size)) != 0)
             {
                 apply_new_text = state->TextA.Data;
                 apply_new_text_length = state->CurLenA;
@@ -4590,7 +4598,11 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
         //IMGUI_DEBUG_PRINT("InputText(\"%s\"): apply_new_text length %d\n", label, apply_new_text_length);
 
         // If the underlying buffer resize was denied or not carried to the next frame, apply_new_text_length+1 may be >= buf_size.
-        ImStrncpy(buf, apply_new_text, ImMin(apply_new_text_length + 1, buf_size));
+        const int text_bytes = ImMin(apply_new_text_length + 1, buf_size);
+        IM_ASSERT(text_bytes > 0);
+        memcpy(buf, apply_new_text, text_bytes - (!is_zero_terminated ? 0 : 1));
+        if (is_zero_terminated)
+            buf[text_bytes - 1] = '\0';
         value_changed = true;
     }
 
@@ -4795,7 +4807,12 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
         else if (!is_displaying_hint && g.ActiveId == id)
             buf_display_end = buf_display + state->CurLenA;
         else if (!is_displaying_hint)
-            buf_display_end = buf_display + strlen(buf_display);
+        {
+            if (buf_display == buf)
+                buf_display_end = buf + (buf[buf_size - 1] ? buf_size : strlen(buf));
+            else
+                buf_display_end = buf_display + strlen(buf_display);
+        }
 
         if (is_multiline || (buf_display_end - buf_display) < buf_display_max_length)
         {
