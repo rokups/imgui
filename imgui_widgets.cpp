@@ -4013,6 +4013,13 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
     SelectionStart = SelectionEnd = CursorPos;
     BufDirty = true;
     BufTextLen -= bytes_count;
+
+    // Update undo state
+    int w_pos = ImTextCountCharsFromUtf8(obj->TextA.Data, obj->TextA.Data + pos);
+    int w_count = ImTextCountCharsFromUtf8(obj->TextA.Data + pos, obj->TextA.Data + pos + bytes_count);
+    if (STB_TEXTEDIT_CHARTYPE *p = stb_text_createundo(&obj->Stb.undostate, w_pos, w_count, 0))
+        for (int i = 0; i < w_count; ++i)
+            p[i] = ImStb::STB_TEXTEDIT_GETCHAR(obj, w_pos + i);
 }
 
 void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, const char* new_text_end)
@@ -4036,6 +4043,11 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, cons
     SelectionStart = SelectionEnd = CursorPos;
     BufDirty = true;
     BufTextLen += new_text_len;
+
+    // Update undo state
+    int w_pos = ImTextCountCharsFromUtf8(obj->TextA.Data, obj->TextA.Data + pos);
+    int w_count = ImTextCountCharsFromUtf8(new_text, new_text_end);
+    stb_text_createundo(&obj->Stb.undostate, w_pos, 0, w_count);
 }
 
 // Return false to discard a character.
@@ -4125,41 +4137,6 @@ static bool InputTextFilterCharacter(unsigned int* p_char, ImGuiInputTextFlags f
     }
 
     return true;
-}
-
-// Find the shortest single replacement we can make to get the new text from the old text.
-// Important: needs to be run before TextW is rewritten with the new characters because calling STB_TEXTEDIT_GETCHAR() at the end.
-// FIXME: Ideally we should transition toward (1) making InsertChars()/DeleteChars() update undo-stack (2) discourage (and keep reconcile) or obsolete (and remove reconcile) accessing buffer directly.
-static void InputTextReconcileUndoStateAfterUserCallback(ImGuiInputTextState* state, const char* new_buf_a, int new_length_a)
-{
-    ImGuiContext& g = *GImGui;
-    const ImWchar* old_buf = state->TextW.Data;
-    const int old_length = state->CurLenW;
-    const int new_length = ImTextCountCharsFromUtf8(new_buf_a, new_buf_a + new_length_a);
-    g.TempBuffer.reserve_discard((new_length + 1) * sizeof(ImWchar));
-    ImWchar* new_buf = (ImWchar*)(void*)g.TempBuffer.Data;
-    ImTextStrFromUtf8(new_buf, new_length + 1, new_buf_a, new_buf_a + new_length_a);
-
-    const int shorter_length = ImMin(old_length, new_length);
-    int first_diff;
-    for (first_diff = 0; first_diff < shorter_length; first_diff++)
-        if (old_buf[first_diff] != new_buf[first_diff])
-            break;
-    if (first_diff == old_length && first_diff == new_length)
-        return;
-
-    int old_last_diff = old_length - 1;
-    int new_last_diff = new_length - 1;
-    for (; old_last_diff >= first_diff && new_last_diff >= first_diff; old_last_diff--, new_last_diff--)
-        if (old_buf[old_last_diff] != new_buf[new_last_diff])
-            break;
-
-    const int insert_len = new_last_diff - first_diff + 1;
-    const int delete_len = old_last_diff - first_diff + 1;
-    if (insert_len > 0 || delete_len > 0)
-        if (STB_TEXTEDIT_CHARTYPE* p = stb_text_createundo(&state->Stb.undostate, first_diff, delete_len, insert_len))
-            for (int i = 0; i < delete_len; i++)
-                p[i] = ImStb::STB_TEXTEDIT_GETCHAR(state, first_diff + i);
 }
 
 // Edit a string of text
@@ -4286,7 +4263,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // Preserve cursor position and undo/redo stack if we come back to same widget
         // FIXME: Since we reworked this on 2022/06, may want to differenciate recycle_cursor vs recycle_undostate?
         bool recycle_state = (state->ID == id && !init_changed_specs);
-        if (recycle_state && (state->CurLenA != buf_len || (state->TextAIsValid && strncmp(state->TextA.Data, buf, buf_len) != 0)))
+        if (recycle_state && (state->CurLenA != buf_len || strncmp(state->TextA.Data, buf, buf_len) != 0))
             recycle_state = false;
 
         // Start edition
@@ -4682,14 +4659,6 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             }
         }
 
-        // Apply ASCII value
-        if (!is_readonly)
-        {
-            state->TextAIsValid = true;
-            state->TextA.resize(state->TextW.Size * 4 + 1);
-            ImTextStrToUtf8(state->TextA.Data, state->TextA.Size, state->TextW.Data, NULL);
-        }
-
         // When using 'ImGuiInputTextFlags_EnterReturnsTrue' as a special case we reapply the live buffer back to the input buffer before clearing ActiveId, even though strictly speaking it wasn't modified on this frame.
         // If we didn't do that, code like InputInt() with ImGuiInputTextFlags_EnterReturnsTrue would fail.
         // This also allows the user to use InputText() with ImGuiInputTextFlags_EnterReturnsTrue without maintaining any user-side storage (please note that if you use this property along ImGuiInputTextFlags_CallbackResize you can end up with your temporary string object unnecessarily allocating once a frame, either store your string data, either if you don't then don't use ImGuiInputTextFlags_CallbackResize).
@@ -4769,7 +4738,6 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                     if (buf_dirty)
                     {
                         IM_ASSERT(callback_data.BufTextLen == (int)strlen(callback_data.Buf)); // You need to maintain BufTextLen if you change the text!
-                        InputTextReconcileUndoStateAfterUserCallback(state, callback_data.Buf, callback_data.BufTextLen); // FIXME: Move the rest of this block inside function and rename to InputTextReconcileStateAfterUserCallback() ?
                         state->CursorAnimReset();
                     }
                 }
