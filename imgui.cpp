@@ -14022,6 +14022,11 @@ void ImGui::DockContextNewFrameUpdateDocking(ImGuiContext* ctx)
         if (ImGuiDockNode* node = (ImGuiDockNode*)dc->Nodes.Data[n].val_p)
             if (node->IsFloatingNode())
                 DockNodeUpdate(node);
+
+    // Host dock nodes forward their focus to the visible window when no interaction with host window happens.
+    if (g.MovingWindow == NULL && g.ActiveId == 0)
+        if (g.NavWindow && g.NavWindow->DockNodeAsHost)
+            FocusWindow(g.NavWindow->DockNodeAsHost->VisibleWindow);
 }
 
 void ImGui::DockContextEndFrame(ImGuiContext* ctx)
@@ -15373,9 +15378,18 @@ static bool IsDockNodeTitleBarHighlighted(ImGuiDockNode* node, ImGuiDockNode* ro
 
     // FIXME-DOCKING: May want alternative to treat central node void differently? e.g. if (g.NavWindow == host_window)
     if (g.NavWindow && g.NavWindow->RootWindowForTitleBarHighlight == host_window->RootWindowDockTree && root_node->LastFocusedNodeId == node->ID)
-        for (ImGuiDockNode* parent_node = g.NavWindow->RootWindow->DockNode; parent_node != NULL; parent_node = parent_node->HostWindow ? parent_node->HostWindow->RootWindow->DockNode : NULL)
+    {
+        ImGuiDockNode* parent_node = g.NavWindow->RootWindow->DockNode;
+
+        // Highlighting window titlebar if host node is focused hides a visual discrepancy where interaction with some
+        // parts of docked windows hide highlight of active window.
+        if (parent_node == NULL)
+            parent_node = g.NavWindow->RootWindow->DockNodeAsHost;
+
+        for (; parent_node != NULL; parent_node = parent_node->HostWindow ? parent_node->HostWindow->RootWindow->DockNode : NULL)
             if ((parent_node = ImGui::DockNodeGetRootNode(parent_node)) == root_node)
                 return true;
+    }
     return false;
 }
 
@@ -16328,7 +16342,7 @@ void ImGui::DockNodeTreeUpdateSplitter(ImGuiDockNode* node)
             float min_size_0 = resize_limits[0] - child_0->Pos[axis];
             float min_size_1 = child_1->Pos[axis] + child_1->Size[axis] - resize_limits[1];
             ImU32 bg_col = GetColorU32(ImGuiCol_WindowBg);
-            if (SplitterBehavior(bb, GetID("##Splitter"), axis, &cur_size_0, &cur_size_1, min_size_0, min_size_1, WINDOWS_HOVER_PADDING, WINDOWS_RESIZE_FROM_EDGES_FEEDBACK_TIMER, bg_col))
+            if (SplitterBehavior(bb, splitter_id, axis, &cur_size_0, &cur_size_1, min_size_0, min_size_1, WINDOWS_HOVER_PADDING, WINDOWS_RESIZE_FROM_EDGES_FEEDBACK_TIMER, bg_col))
             {
                 if (touching_nodes[0].Size > 0 && touching_nodes[1].Size > 0)
                 {
