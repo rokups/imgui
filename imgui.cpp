@@ -9336,7 +9336,10 @@ void ImGui::OpenPopupEx(ImGuiID id, ImGuiPopupFlags popup_flags)
     ImGuiPopupData popup_ref; // Tagged as new ref as Window will be set back to NULL if we write this into OpenPopupStack.
     popup_ref.PopupId = id;
     popup_ref.Window = NULL;
-    popup_ref.SourceWindow = g.NavWindow;
+    if (g.NavWindow && (g.NavWindow->Flags & ImGuiWindowFlags_ChildMenu) != 0)
+        popup_ref.RestoreNavWindow = parent_window;    // Menu parent may be a temporary submenu that is about to close and parent_window is more correct in the context of menus.
+    else
+        popup_ref.RestoreNavWindow = g.NavWindow;      // When popup closes focus will be restored to NavWindow. This is usually fine as NavWindow is unlikely to just disappear on us.
     popup_ref.OpenFrameCount = g.FrameCount;
     popup_ref.OpenParentId = parent_window->IDStack.back();
     popup_ref.OpenPopupPos = NavCalcPreferredRefPos();
@@ -9438,7 +9441,7 @@ void ImGui::ClosePopupToLevel(int remaining, bool restore_focus_to_window_under_
     IM_ASSERT(remaining >= 0 && remaining < g.OpenPopupStack.Size);
 
     // Trim open popup stack
-    ImGuiWindow* focus_window = g.OpenPopupStack[remaining].SourceWindow;
+    ImGuiWindow* focus_window = g.OpenPopupStack[remaining].RestoreNavWindow;
     ImGuiWindow* popup_window = g.OpenPopupStack[remaining].Window;
     g.OpenPopupStack.resize(remaining);
 

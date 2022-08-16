@@ -79,6 +79,7 @@ Other Changes:
 - Window: Fixed a potential crash when appending to a child window. (#5515, #3496, #4797) [@rokups]
 - IO: Added ImGuiKey_MouseXXX aliases for mouse buttons/wheel so all operations done on ImGuiKey
   can apply to mouse data as well. (#4921)
+- Menus: Fixed sub-menu inadvertently closing in some cases when mouse is moving towards that sub-menu. [@rokups]
 - Nav: Fixed moving/resizing window with gamepad or keyboard when running at very high framerate.
 - Nav: Pressing Space/GamepadFaceDown on a repeating button uses the same repeating rate as a mouse hold.
 - Platform IME: [Windows] Removed call to ImmAssociateContextEx() leading to freeze on some setups.

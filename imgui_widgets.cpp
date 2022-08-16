@@ -7107,7 +7107,7 @@ bool ImGui::BeginMenuEx(const char* label, const char* icon, bool enabled)
         // Close menu when not hovering it anymore unless we are moving roughly in the direction of the menu
         // Implement http://bjk5.com/post/44698559168/breaking-down-amazons-mega-dropdown to avoid using timers, so menus feels more reactive.
         bool moving_toward_child_menu = false;
-        ImGuiWindow* child_menu_window = (g.BeginPopupStack.Size < g.OpenPopupStack.Size && g.OpenPopupStack[g.BeginPopupStack.Size].SourceWindow == window) ? g.OpenPopupStack[g.BeginPopupStack.Size].Window : NULL;
+        ImGuiWindow* child_menu_window = (g.BeginPopupStack.Size < g.OpenPopupStack.Size && g.OpenPopupStack[g.BeginPopupStack.Size].RestoreNavWindow == window) ? g.OpenPopupStack[g.BeginPopupStack.Size].Window : NULL;
         if (g.HoveredWindow == window && child_menu_window != NULL && !(window->Flags & ImGuiWindowFlags_MenuBar))
         {
             float ref_unit = g.FontSize; // FIXME-DPI
