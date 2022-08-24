@@ -1507,6 +1507,20 @@ ImVec2 ImLineClosestPoint(const ImVec2& a, const ImVec2& b, const ImVec2& p)
     return a + ab_dir * dot / ab_len_sqr;
 }
 
+// Implements solution described in https://www.baeldung.com/cs/check-if-point-is-in-2d-triangle#orientation-approach
+bool ImQuadContainsPoint(ImVec2 p1, ImVec2 p2, ImVec2 p3, ImVec2 p4, ImVec2 pt)
+{
+    if (ImAbs((ImCross(p2 - p1, pt - p1) > 0 ? +1 : -1) +
+              (ImCross(p3 - p2, pt - p2) > 0 ? +1 : -1) +
+              (ImCross(p1 - p3, pt - p3) > 0 ? +1 : -1)) == 3)
+        return true;
+    if (ImAbs((ImCross(p3 - p1, pt - p1) > 0 ? +1 : -1) +
+              (ImCross(p4 - p3, pt - p3) > 0 ? +1 : -1) +
+              (ImCross(p1 - p4, pt - p4) > 0 ? +1 : -1)) == 3)
+        return true;
+    return false;
+}
+
 bool ImTriangleContainsPoint(const ImVec2& a, const ImVec2& b, const ImVec2& c, const ImVec2& p)
 {
     bool b1 = ((p.x - b.x) * (a.y - b.y) - (p.y - b.y) * (a.x - b.x)) < 0.0f;
@@ -9336,7 +9350,7 @@ void ImGui::OpenPopupEx(ImGuiID id, ImGuiPopupFlags popup_flags)
     ImGuiPopupData popup_ref; // Tagged as new ref as Window will be set back to NULL if we write this into OpenPopupStack.
     popup_ref.PopupId = id;
     popup_ref.Window = NULL;
-    if (g.NavWindow && (g.NavWindow->Flags & ImGuiWindowFlags_ChildMenu) != 0)
+    if (parent_window && (parent_window->Flags & ImGuiWindowFlags_ChildMenu) != 0)
         popup_ref.RestoreNavWindow = parent_window;    // Menu parent may be a temporary submenu that is about to close and parent_window is more correct in the context of menus.
     else
         popup_ref.RestoreNavWindow = g.NavWindow;      // When popup closes focus will be restored to NavWindow. This is usually fine as NavWindow is unlikely to just disappear on us.

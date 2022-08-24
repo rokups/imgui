@@ -7105,22 +7105,39 @@ bool ImGui::BeginMenuEx(const char* label, const char* icon, bool enabled)
     if (window->DC.LayoutType == ImGuiLayoutType_Vertical) // (window->Flags & (ImGuiWindowFlags_Popup|ImGuiWindowFlags_ChildMenu))
     {
         // Close menu when not hovering it anymore unless we are moving roughly in the direction of the menu
-        // Implement http://bjk5.com/post/44698559168/breaking-down-amazons-mega-dropdown to avoid using timers, so menus feels more reactive.
+        // Implement a variant of http://bjk5.com/post/44698559168/breaking-down-amazons-mega-dropdown with added timer, so menus feels more reactive.
         bool moving_toward_child_menu = false;
         ImGuiWindow* child_menu_window = (g.BeginPopupStack.Size < g.OpenPopupStack.Size && g.OpenPopupStack[g.BeginPopupStack.Size].RestoreNavWindow == window) ? g.OpenPopupStack[g.BeginPopupStack.Size].Window : NULL;
         if (g.HoveredWindow == window && child_menu_window != NULL && !(window->Flags & ImGuiWindowFlags_MenuBar))
         {
-            float ref_unit = g.FontSize; // FIXME-DPI
+            const float ref_unit = g.FontSize;                  // FIXME-DPI
+            const float no_move_timeout_sec = 0.1f;             // Expire opening other child menu inhibition when this many seconds elapse with no mouse movement
+            const float opposite_move_threshold = ref_unit;     // Expire opening other child menu inhibition when mouse moves this far to the opposite side of open submenu
+
+            // Expecting mouse to move towards menu within two frames or 100ms, whichever is lower.
+            // This ensures applications running at low framerates can interact with menus.
+            const float timeout_seconds = ImClamp(g.IO.DeltaTime * 2, no_move_timeout_sec, FLT_MAX);
+            const float child_menu_side = window->Pos.x < child_menu_window->Pos.x ? +1.0f : -1.0f;
+            if (menu_is_open && hovered)
+                g.MenuQuadPos.x = g.IO.MousePos.x;                          // Expand/contract quad when mouse is moving over menu item whose child menu is open
+            else if (child_menu_side > 0)
+                g.MenuQuadPos.x = ImMax(g.MenuQuadPos.x, g.IO.MousePos.x);  // Move quad side opposite of child menu when mouse moves towards child menu
+            else //if (child_menu_side < 0)
+                g.MenuQuadPos.x = ImMin(g.MenuQuadPos.x, g.IO.MousePos.x);
+            if (ImLengthSqr(g.IO.MouseDelta) != 0.0f)
+                g.MenuLastMouseMoveTime = g.Time;                           // Reset close timer when mouse is moving
             ImRect next_window_rect = child_menu_window->Rect();
-            ImVec2 ta = (g.IO.MousePos - g.IO.MouseDelta);
-            ImVec2 tb = (window->Pos.x < child_menu_window->Pos.x) ? next_window_rect.GetTL() : next_window_rect.GetTR();
-            ImVec2 tc = (window->Pos.x < child_menu_window->Pos.x) ? next_window_rect.GetBL() : next_window_rect.GetBR();
-            float extra = ImClamp(ImFabs(ta.x - tb.x) * 0.30f, ref_unit * 0.5f, ref_unit * 2.5f);   // add a bit of extra slack.
-            ta.x += (window->Pos.x < child_menu_window->Pos.x) ? -0.5f : +0.5f;                     // to avoid numerical issues (FIXME: ??)
-            tb.y = ta.y + ImMax((tb.y - extra) - ta.y, -ref_unit * 8.0f);                           // triangle has maximum height to limit the slope and the bias toward large sub-menus
-            tc.y = ta.y + ImMin((tc.y + extra) - ta.y, +ref_unit * 8.0f);
-            moving_toward_child_menu = ImTriangleContainsPoint(ta, tb, tc, g.IO.MousePos);
-            //GetForegroundDrawList()->AddTriangleFilled(ta, tb, tc, moving_toward_other_child_menu ? IM_COL32(0,128,0,128) : IM_COL32(128,0,0,128)); // [DEBUG]
+            ImVec2 p1 = ImVec2(g.MenuQuadPos.x - opposite_move_threshold * child_menu_side, g.MenuQuadPos.y + g.LastItemData.Rect.GetHeight());
+            ImVec2 p2 = ImVec2(g.MenuQuadPos.x - opposite_move_threshold * child_menu_side, g.MenuQuadPos.y);
+            ImVec2 p3 = child_menu_side > 0 ? next_window_rect.GetTL() + ImVec2(4.0f, 0.0f) : next_window_rect.GetTR() - ImVec2(4.0f, 0.0f);    // Expand wide side of the quad
+            ImVec2 p4 = child_menu_side > 0 ? next_window_rect.GetBL() + ImVec2(4.0f, 0.0f) : next_window_rect.GetBR() - ImVec2(4.0f, 0.0f);    // into opened submenu (#5614)
+            p1.x = child_menu_side > 0 ? ImMax(p1.x, g.LastItemData.Rect.Min.x) : ImMin(p1.x, g.LastItemData.Rect.Max.x);   // Narrow side of the quad opposite of sub-menu
+            p2.x = child_menu_side > 0 ? ImMax(p2.x, g.LastItemData.Rect.Min.x) : ImMin(p2.x, g.LastItemData.Rect.Max.x);   // does not go outside of menu item.
+            float extra = ImClamp(ImFabs(p1.x - p3.x) * 0.30f, ref_unit * 0.5f, ref_unit * 2.5f);   // add a bit of extra slack.
+            p3.y = p1.y + ImMax((p3.y - extra) - p1.y, -ref_unit * 8.0f);                           // triangle has maximum height to limit the slope and the bias toward large sub-menus
+            p4.y = p1.y + ImMin((p4.y + extra) - p1.y, +ref_unit * 8.0f);
+            moving_toward_child_menu = ImQuadContainsPoint(p1, p2, p3, p4, g.IO.MousePos) && (g.Time - g.MenuLastMouseMoveTime) < timeout_seconds;
+            //if (menu_is_open) GetForegroundDrawList()->AddQuadFilled(p1, p2, p3, p4, moving_toward_child_menu ? IM_COL32(0, 128, 0, 128) : IM_COL32(128, 0, 0, 128)); // [DEBUG] Also increase no_move_timeout_sec for easier visualization.
         }
 
         // The 'HovereWindow == window' check creates an inconsistency (e.g. moving away from menu slowly tends to hit same window, whereas moving away fast does not)
@@ -7166,6 +7183,13 @@ bool ImGui::BeginMenuEx(const char* label, const char* icon, bool enabled)
 
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags | ImGuiItemStatusFlags_Openable | (menu_is_open ? ImGuiItemStatusFlags_Opened : 0));
     PopID();
+
+    if (want_open)
+    {
+        g.MenuLastMouseMoveTime = g.Time;
+        g.MenuQuadPos.x = g.IO.MousePos.x;
+        g.MenuQuadPos.y = g.LastItemData.Rect.Min.y;
+    }
 
     if (!menu_is_open && want_open && g.OpenPopupStack.Size > g.BeginPopupStack.Size)
     {
