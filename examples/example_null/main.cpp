@@ -13,7 +13,8 @@ int main(int, char**)
     ImGui_ImplNull_InitInfo params;
     params.DeltaTime = 1.0f / 60.0f;
     params.WindowSize = ImVec2(1920.0f, 1080.0f);
-    ImGui_ImplNull_Init(&params);
+    ImGui_ImplNullPlatform_Init(&params);
+    ImGui_ImplNullRenderer_Init();
 
     // Our state
     bool show_demo_window = true;
@@ -23,10 +24,11 @@ int main(int, char**)
     for (int n = 0; n < 20; n++)
     {
         printf("NewFrame() %d\n", n);
-        //while(PollEvents(&event))
-        //    ImGui_ImplNull_ProcessEvent(&event);
+        while (false)
+            ImGui_ImplNullPlatform_ProcessEvent(NULL);
 
-        ImGui_ImplNull_NewFrame();
+        ImGui_ImplNullRenderer_NewFrame();
+        ImGui_ImplNullPlatform_NewFrame();
         ImGui::NewFrame();
 
         // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
@@ -67,10 +69,14 @@ int main(int, char**)
         }
 
         ImGui::Render();
+        ImGui_ImplNullRenderer_RenderDrawData(ImGui::GetDrawData());
     }
 
-    ImGui_ImplNull_Shutdown();
+    // Cleanup
+    ImGui_ImplNullRenderer_Shutdown();
+    ImGui_ImplNullPlatform_Shutdown();
     printf("DestroyContext()\n");
     ImGui::DestroyContext();
+
     return 0;
 }
