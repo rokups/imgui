@@ -57,8 +57,9 @@ jobs:
           echo '#endif'                                          >> example_single_file.cpp
           echo '#define IMGUI_IMPLEMENTATION'                    >> example_single_file.cpp
           echo '#include "misc/single_file/imgui_single_file.h"' >> example_single_file.cpp
-          g++ -I. -Wall -Wformat -D_EXPORT -shared -o libimgui.dll -Wl,--out-implib,libimgui.a example_single_file.cpp -limm32
-          g++ -I. -Wall -Wformat -o example_null.exe examples/example_null/main.cpp -L. -limgui
+          echo '#include "backends/imgui_impl_null.cpp"'         >> example_single_file.cpp
+          g++ -I. -Ibackends -Wall -Wformat -D_EXPORT -shared -o libimgui.dll -Wl,--out-implib,libimgui.a example_single_file.cpp -limm32
+          g++ -I. -Ibackends -Wall -Wformat -o example_null.exe examples/example_null/main.cpp -L. -limgui
           rm -f example_null.exe libimgui.* example_single_file.*
 
       - name: Build example_null (extra warnings, msvc 64-bit)
@@ -76,9 +77,10 @@ jobs:
           #define IMGUI_IMPLEMENTATION
           #include "misc/single_file/imgui_single_file.h"
           #include "examples/example_null/main.cpp"
+          #include "backends/imgui_impl_null.cpp"
 
           EOF
-          g++ -I. -Wall -Wformat -o example_single_file.exe example_single_file.cpp -limm32
+          g++ -I. -Ibackends -Wall -Wformat -o example_single_file.exe example_single_file.cpp -limm32
 
       - name: Build example_null (with IMGUI_DISABLE_WIN32_FUNCTIONS)
         shell: bash
@@ -89,9 +91,10 @@ jobs:
           #define IMGUI_IMPLEMENTATION
           #include "misc/single_file/imgui_single_file.h"
           #include "examples/example_null/main.cpp"
+          #include "backends/imgui_impl_null.cpp"
 
           EOF
-          g++ -I. -Wall -Wformat -o example_single_file.exe example_single_file.cpp -limm32
+          g++ -I. -Ibackends -Wall -Wformat -o example_single_file.exe example_single_file.cpp -limm32
 
       - name: Build example_null (as DLL)
         shell: cmd
@@ -105,9 +108,10 @@ jobs:
           echo #endif                                          >> example_single_file.cpp
           echo #define IMGUI_IMPLEMENTATION                    >> example_single_file.cpp
           echo #include "misc/single_file/imgui_single_file.h" >> example_single_file.cpp
+          echo #include "backends/imgui_impl_null.cpp"         >> example_single_file.cpp
 
-          cl.exe /D_USRDLL /D_WINDLL /D_EXPORT /I. example_single_file.cpp /LD /FeImGui.dll /link
-          cl.exe /I. ImGui.lib /Feexample_null.exe examples/example_null/main.cpp
+          cl.exe /D_USRDLL /D_WINDLL /D_EXPORT /I. /Ibackends example_single_file.cpp /LD /FeImGui.dll /link
+          cl.exe /I. /Ibackends ImGui.lib /Feexample_null.exe examples/example_null/main.cpp
 
       - name: Build Win32 example_glfw_opengl2
         shell: cmd
@@ -244,9 +248,10 @@ jobs:
           #define IMGUI_IMPLEMENTATION
           #include "misc/single_file/imgui_single_file.h"
           #include "examples/example_null/main.cpp"
+          #include "backends/imgui_impl_null.cpp"
 
           EOF
-          g++ -I. -std=c++11 -Wall -Wformat -Wextra -Werror -Wno-zero-as-null-pointer-constant -Wno-double-promotion -Wno-variadic-macros -Wno-empty-body -o example_single_file example_single_file.cpp
+          g++ -I. -Ibackends -std=c++11 -Wall -Wformat -Wextra -Werror -Wno-zero-as-null-pointer-constant -Wno-double-promotion -Wno-variadic-macros -Wno-empty-body -o example_single_file example_single_file.cpp
 
     - name: Build example_null (freetype)
       run: |
@@ -260,9 +265,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with ImWchar32)
       run: |
@@ -272,9 +278,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with large ImDrawIdx + pointer ImTextureID)
       run: |
@@ -285,9 +292,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
       run: |
@@ -297,9 +305,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with IMGUI_DISABLE_OBSOLETE_KEYIO)
       run: |
@@ -309,9 +318,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with IMGUI_DISABLE_DEMO_WINDOWS and IMGUI_DISABLE_DEBUG_TOOLS)
       run: |
@@ -322,9 +332,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with IMGUI_DISABLE_FILE_FUNCTIONS)
       run: |
@@ -334,9 +345,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with IMGUI_USE_BGRA_PACKED_COLOR)
       run: |
@@ -346,9 +358,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (with IM_VEC2_CLASS_EXTRA and IM_VEC4_CLASS_EXTRA)
       run: |
@@ -366,9 +379,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        g++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        g++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (without c++ runtime, Clang)
       run: |
@@ -378,9 +392,10 @@ jobs:
         #define IMGUI_DISABLE_DEMO_WINDOWS
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        clang++ -I. -std=c++11 -Wall -Wformat -nodefaultlibs -fno-rtti -fno-exceptions -fno-threadsafe-statics -lc -lm -o example_single_file example_single_file.cpp
+        clang++ -I. -Ibackends -std=c++11 -Wall -Wformat -nodefaultlibs -fno-rtti -fno-exceptions -fno-threadsafe-statics -lc -lm -o example_single_file example_single_file.cpp
 
     - name: Build example_glfw_opengl2
       run: make -C examples/example_glfw_opengl2
@@ -418,9 +433,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        clang++ -I. -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
+        clang++ -I. -Ibackends -std=c++11 -Wall -Wformat -o example_single_file example_single_file.cpp
 
     - name: Build example_null (without c++ runtime)
       run: |
@@ -429,9 +445,10 @@ jobs:
         #define IMGUI_IMPLEMENTATION
         #include "misc/single_file/imgui_single_file.h"
         #include "examples/example_null/main.cpp"
+        #include "backends/imgui_impl_null.cpp"
 
         EOF
-        clang++ -I. -std=c++11 -Wall -Wformat -nodefaultlibs -fno-rtti -fno-exceptions -fno-threadsafe-statics -lc -lm -o example_single_file example_single_file.cpp
+        clang++ -I. -Ibackends -std=c++11 -Wall -Wformat -nodefaultlibs -fno-rtti -fno-exceptions -fno-threadsafe-statics -lc -lm -o example_single_file example_single_file.cpp
 
     - name: Build example_glfw_opengl2
       run: make -C examples/example_glfw_opengl2
