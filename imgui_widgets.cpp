@@ -3685,9 +3685,8 @@ static bool STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const Im
     const int text_len = obj->CurLenW;
     IM_ASSERT(pos <= text_len);
 
-    const int zb = (obj->Flags & ImGuiInputTextFlags_NoZeroTerminator) != 0 ? 0 : 1;  // Zero bytes
     const int new_text_len_utf8 = ImTextCountUtf8BytesFromStr(new_text, new_text + new_text_len);
-    if (!is_resizable && (new_text_len_utf8 + obj->CurLenA + zb > obj->BufCapacityA))
+    if (!is_resizable && (new_text_len_utf8 + obj->CurLenA + 1 > obj->BufCapacityA))
         return false;
 
     // Grow internal buffer if needed
@@ -3775,9 +3774,7 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
     const char* src = Buf + pos + bytes_count;
     while (char c = *src++)
         *dst++ = c;
-
-    if ((Flags & ImGuiInputTextFlags_NoZeroTerminator) == 0)
-        *dst = '\0';
+    *dst = '\0';
 
     if (CursorPos >= pos + bytes_count)
         CursorPos -= bytes_count;
@@ -3790,10 +3787,9 @@ void ImGuiInputTextCallbackData::DeleteChars(int pos, int bytes_count)
 
 void ImGuiInputTextCallbackData::InsertChars(int pos, ImStrv new_text)
 {
-    const bool use_zero_terminator = (Flags & ImGuiInputTextFlags_NoZeroTerminator) == 0;
     const bool is_resizable = (Flags & ImGuiInputTextFlags_CallbackResize) != 0;
     const int new_text_len = (int)new_text.length();
-    if (new_text_len + BufTextLen >= BufSize + (use_zero_terminator ? 0 : 1))
+    if (new_text_len + BufTextLen >= BufSize)
     {
         if (!is_resizable)
             return;
@@ -3813,9 +3809,7 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, ImStrv new_text)
         memmove(Buf + pos + new_text_len, Buf + pos, (size_t)(BufTextLen - pos));
     if (new_text_len > 0)
         memcpy(Buf + pos, new_text.Begin, (size_t)new_text_len * sizeof(char));
-
-    if (use_zero_terminator)
-        Buf[BufTextLen + new_text_len] = '\0';
+    Buf[BufTextLen + new_text_len] = '\0';
 
     if (CursorPos >= pos)
         CursorPos += new_text_len;
@@ -3974,6 +3968,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
     IM_ASSERT(buf != NULL && buf_size >= 0);
     IM_ASSERT(!((flags & ImGuiInputTextFlags_CallbackHistory) && (flags & ImGuiInputTextFlags_Multiline)));        // Can't use both together (they both use up/down keys)
     IM_ASSERT(!((flags & ImGuiInputTextFlags_CallbackCompletion) && (flags & ImGuiInputTextFlags_AllowTabInput))); // Can't use both together (they both use tab key)
+    IM_ASSERT(!((flags & ImGuiInputTextFlags_NoZeroTerminator) && buf_size == 0));                                 // Can't calculate string length, it must be specified explicitly
 
     ImGuiContext& g = *GImGui;
     ImGuiIO& io = g.IO;
@@ -4074,7 +4069,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
 
         // Take a copy of the initial buffer value (both in original UTF-8 format and converted to wchar)
         // From the moment we focused we are ignoring the content of 'buf' (unless we are in read-only mode)
-        const int buf_len = (!is_zero_terminated && buf[buf_size - 1]) ? buf_size : (int)strlen(buf);
+        const int buf_len = (!is_zero_terminated && buf_size > 0 && buf[buf_size - 1]) ? buf_size : (int)strlen(buf);
         state->InitialTextA.resize(buf_len + 1);    // UTF-8. we use +1 to make sure that .Data is always pointing to at least an empty string.
         memcpy(state->InitialTextA.Data, buf, buf_len);
         state->InitialTextA.Data[buf_len] = 0;
@@ -4199,7 +4194,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
         IM_ASSERT(state != NULL);
         backup_current_text_length = state->CurLenA;
         state->Edited = false;
-        state->BufCapacityA = buf_size;
+        state->BufCapacityA = buf_size + (is_zero_terminated ? 0 : 1);  // Internal buffer is always zero-terminated.
         state->Flags = flags;
 
         // Although we are active we don't prevent mouse from hovering other elements unless we are interacting right now with the widget.
@@ -4523,10 +4518,11 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
                     callback_data.UserData = callback_user_data;
 
                     char* callback_buf = is_readonly ? buf : state->TextA.Data;
+                    int callback_buf_capacity = is_readonly ? buf_size : state->BufCapacityA;
                     callback_data.EventKey = event_key;
                     callback_data.Buf = callback_buf;
                     callback_data.BufTextLen = state->CurLenA;
-                    callback_data.BufSize = state->BufCapacityA;
+                    callback_data.BufSize = callback_buf_capacity;
                     callback_data.BufDirty = false;
 
                     // We have to convert from wchar-positions to UTF-8-positions, which can be pretty slow (an incentive to ditch the ImWchar buffer, see https://github.com/nothings/stb/issues/188)
@@ -4541,7 +4537,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
                     // Read back what user may have modified
                     callback_buf = is_readonly ? buf : state->TextA.Data; // Pointer may have been invalidated by a resize callback
                     IM_ASSERT(callback_data.Buf == callback_buf);         // Invalid to modify those fields
-                    IM_ASSERT(callback_data.BufSize == state->BufCapacityA);
+                    IM_ASSERT(callback_data.BufSize == callback_buf_capacity);
                     IM_ASSERT(callback_data.Flags == flags);
                     const bool buf_dirty = callback_data.BufDirty;
                     if (callback_data.CursorPos != utf8_cursor_pos || buf_dirty)            { state->Stb.cursor = ImTextCountCharsFromUtf8(callback_data.Buf, callback_data.Buf + callback_data.CursorPos); state->CursorFollow = true; }
@@ -4592,17 +4588,17 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
             callback(&callback_data);
             buf = callback_data.Buf;
             buf_size = callback_data.BufSize;
-            apply_new_text_length = ImMin(callback_data.BufTextLen, buf_size - 1);
+            apply_new_text_length = ImMin(callback_data.BufTextLen, buf_size - (is_zero_terminated ? 1 : 0));
             IM_ASSERT(apply_new_text_length <= buf_size);
         }
         //IMGUI_DEBUG_PRINT("InputText(\"%s\"): apply_new_text length %d\n", label, apply_new_text_length);
 
         // If the underlying buffer resize was denied or not carried to the next frame, apply_new_text_length+1 may be >= buf_size.
-        const int text_bytes = ImMin(apply_new_text_length + 1, buf_size);
-        IM_ASSERT(text_bytes > 0);
-        memcpy(buf, apply_new_text, text_bytes - (!is_zero_terminated ? 0 : 1));
-        if (is_zero_terminated)
-            buf[text_bytes - 1] = '\0';
+        const int text_bytes = ImMin(apply_new_text_length, buf_size - (is_zero_terminated ? 1 : 0));
+        if (text_bytes)
+            memcpy(buf, apply_new_text, text_bytes);
+        if (is_zero_terminated || text_bytes < buf_size)
+            buf[text_bytes] = '\0'; // Also clears string when text_bytes == 0
         value_changed = true;
     }
 
