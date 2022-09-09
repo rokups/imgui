@@ -3323,7 +3323,7 @@ bool ImGui::TempInputText(const ImRect& bb, ImGuiID id, ImStrv label, char* buf,
         ClearActiveID();
 
     g.CurrentWindow->DC.CursorPos = bb.Min;
-    bool value_changed = InputTextEx(label, NULL, buf, buf_size, bb.GetSize(), flags | ImGuiInputTextFlags_MergedItem);
+    bool value_changed = InputTextEx(label, NULL, buf, NULL, buf_size, bb.GetSize(), flags | ImGuiInputTextFlags_MergedItem);
     if (init)
     {
         // First frame we started displaying the InputText widget, we expect it to take the active id.
@@ -3556,19 +3556,22 @@ bool ImGui::InputDouble(ImStrv label, double* v, double step, double step_fast, 
 
 bool ImGui::InputText(ImStrv label, char* buf, size_t buf_size, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
 {
-    IM_ASSERT(!(flags & ImGuiInputTextFlags_Multiline)); // call InputTextMultiline()
-    return InputTextEx(label, NULL, buf, (int)buf_size, ImVec2(0, 0), flags, callback, user_data);
+    IM_ASSERT(!(flags & ImGuiInputTextFlags_Multiline)); // call InputTextMultiline().
+    IM_ASSERT(!(flags & ImGuiInputTextFlags_NoZeroTerminator)); // call InputTextEx(), pass buf_len.
+    return InputTextEx(label, NULL, buf, NULL, (int)buf_size, ImVec2(0, 0), flags, callback, user_data);
 }
 
 bool ImGui::InputTextMultiline(ImStrv label, char* buf, size_t buf_size, const ImVec2& size, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
 {
-    return InputTextEx(label, NULL, buf, (int)buf_size, size, flags | ImGuiInputTextFlags_Multiline, callback, user_data);
+    IM_ASSERT(!(flags & ImGuiInputTextFlags_NoZeroTerminator)); // call InputTextEx(), pass buf_len.
+    return InputTextEx(label, NULL, buf, NULL, (int)buf_size, size, flags | ImGuiInputTextFlags_Multiline, callback, user_data);
 }
 
 bool ImGui::InputTextWithHint(ImStrv label, ImStrv hint, char* buf, size_t buf_size, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
 {
-    IM_ASSERT(!(flags & ImGuiInputTextFlags_Multiline)); // call InputTextMultiline() or  InputTextEx() manually if you need multi-line + hint.
-    return InputTextEx(label, hint, buf, (int)buf_size, ImVec2(0, 0), flags, callback, user_data);
+    IM_ASSERT(!(flags & ImGuiInputTextFlags_Multiline)); // call InputTextMultiline() or InputTextEx() manually if you need multi-line + hint.
+    IM_ASSERT(!(flags & ImGuiInputTextFlags_NoZeroTerminator)); // call InputTextEx(), pass buf_len.
+    return InputTextEx(label, hint, buf, NULL, (int)buf_size, ImVec2(0, 0), flags, callback, user_data);
 }
 
 static int InputTextCalcTextLenAndLineCount(const char* text_begin, const char** out_text_end)
@@ -3957,9 +3960,11 @@ static void InputTextReconcileUndoStateAfterUserCallback(ImGuiInputTextState* st
 //   Note that in std::string world, capacity() would omit 1 byte used by the zero-terminator.
 // - When active, hold on a privately held copy of the text (and apply back to 'buf'). So changing 'buf' while the InputText is active has no effect.
 // - If you want to use ImGui::InputText() with std::string, see misc/cpp/imgui_stdlib.h
+// - If you want to use ImGui::InputText() with strings that do not contain a terminating zero byte, use ImGui::InputTextEx() directly, pass buf_len_p
+//   with a current length of a string in buf and ImGuiInputTextFlags_NoZeroTerminator flag.
 // (FIXME: Rather confusing and messy function, among the worse part of our codebase, expecting to rewrite a V2 at some point.. Partly because we are
 //  doing UTF8 > U16 > UTF8 conversions on the go to easily interface with stb_textedit. Ideally should stay in UTF-8 all the time. See https://github.com/nothings/stb/issues/188)
-bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, const ImVec2& size_arg, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* callback_user_data)
+bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int* buf_len_p, int buf_size, const ImVec2& size_arg, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* callback_user_data)
 {
     ImGuiWindow* window = GetCurrentWindow();
     if (window->SkipItems)
@@ -3969,6 +3974,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
     IM_ASSERT(!((flags & ImGuiInputTextFlags_CallbackHistory) && (flags & ImGuiInputTextFlags_Multiline)));        // Can't use both together (they both use up/down keys)
     IM_ASSERT(!((flags & ImGuiInputTextFlags_CallbackCompletion) && (flags & ImGuiInputTextFlags_AllowTabInput))); // Can't use both together (they both use tab key)
     IM_ASSERT(!((flags & ImGuiInputTextFlags_NoZeroTerminator) && buf_size == 0));                                 // Can't calculate string length, it must be specified explicitly
+    IM_ASSERT(!((flags & ImGuiInputTextFlags_NoZeroTerminator) && buf_len_p == NULL));                             // Can't use unterminated strings without providing length of the string in the buffer
 
     ImGuiContext& g = *GImGui;
     ImGuiIO& io = g.IO;
@@ -4069,7 +4075,7 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
 
         // Take a copy of the initial buffer value (both in original UTF-8 format and converted to wchar)
         // From the moment we focused we are ignoring the content of 'buf' (unless we are in read-only mode)
-        const int buf_len = (!is_zero_terminated && buf_size > 0 && buf[buf_size - 1]) ? buf_size : (int)strlen(buf);
+        int buf_len = buf_len_p ? *buf_len_p : (int)strlen(buf);
         state->InitialTextA.resize(buf_len + 1);    // UTF-8. we use +1 to make sure that .Data is always pointing to at least an empty string.
         memcpy(state->InitialTextA.Data, buf, buf_len);
         state->InitialTextA.Data[buf_len] = 0;
@@ -4599,6 +4605,8 @@ bool ImGui::InputTextEx(ImStrv label, ImStrv hint, char* buf, int buf_size, cons
             memcpy(buf, apply_new_text, text_bytes);
         if (is_zero_terminated || text_bytes < buf_size)
             buf[text_bytes] = '\0'; // Also clears string when text_bytes == 0
+        if (buf_len_p)
+            *buf_len_p = text_bytes;
         value_changed = true;
     }
 
