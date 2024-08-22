@@ -492,12 +492,12 @@ void ImDrawList::AddCallback(ImDrawCallback callback, void* callback_data)
 #define ImDrawCmd_HeaderCopy(CMD_DST, CMD_SRC)          (memcpy(CMD_DST, CMD_SRC, ImDrawCmd_HeaderSize))    // Copy ClipRect, TextureId, VtxOffset
 #define ImDrawCmd_AreSequentialIdxOffset(CMD_0, CMD_1)  (CMD_0->IdxOffset + CMD_0->ElemCount == CMD_1->IdxOffset)
 
-#define ImRect_AddPoint(bb, pos)                \
+#define ImRect_AddPoint(bb, pos_x, pos_y)       \
     do {                                        \
-        if ((bb).x > (pos).x) (bb).x = (pos).x; \
-        if ((bb).y > (pos).y) (bb).y = (pos).y; \
-        if ((bb).z < (pos).x) (bb).z = (pos).x; \
-        if ((bb).w < (pos).y) (bb).w = (pos).y; \
+        if ((bb).x > (pos_x)) (bb).x = (pos_x);  \
+        if ((bb).y > (pos_y)) (bb).y = (pos_y);  \
+        if ((bb).z < (pos_x)) (bb).z = (pos_x);  \
+        if ((bb).w < (pos_y)) (bb).w = (pos_y);  \
     } while (false)
 
 // Try to merge two last draw commands
@@ -691,8 +691,8 @@ void ImDrawList::PrimRect(const ImVec2& a, const ImVec2& c, ImU32 col)
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv; _VtxWritePtr[3].col = col;
     ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
-    ImRect_AddPoint(bb, a);
-    ImRect_AddPoint(bb, c);
+    ImRect_AddPoint(bb, a.x, a.y);
+    ImRect_AddPoint(bb, c.x, c.y);
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -709,8 +709,8 @@ void ImDrawList::PrimRectUV(const ImVec2& a, const ImVec2& c, const ImVec2& uv_a
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
     ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
-    ImRect_AddPoint(bb, a);
-    ImRect_AddPoint(bb, c);
+    ImRect_AddPoint(bb, a.x, a.y);
+    ImRect_AddPoint(bb, c.x, c.y);
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -726,10 +726,10 @@ void ImDrawList::PrimQuadUV(const ImVec2& a, const ImVec2& b, const ImVec2& c, c
     _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
     _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
     ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
-    ImRect_AddPoint(bb, a);
-    ImRect_AddPoint(bb, b);
-    ImRect_AddPoint(bb, c);
-    ImRect_AddPoint(bb, d);
+    ImRect_AddPoint(bb, a.x, a.y);
+    ImRect_AddPoint(bb, b.x, b.y);
+    ImRect_AddPoint(bb, c.x, c.y);
+    ImRect_AddPoint(bb, d.x, d.y);
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -760,13 +760,13 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
         ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
         const float half_thickness = thickness * 0.5f;
         for (const ImVec2* p = points, *end = &points[points_count]; p < end; p++)
-            ImRect_AddPoint(local_bb, *p);
+            ImRect_AddPoint(local_bb, p->x, p->y);
         local_bb.x -= half_thickness;
         local_bb.z += half_thickness;
         local_bb.y -= half_thickness;
         local_bb.w += half_thickness;
-        ImRect_AddPoint(bb, ImVec2(local_bb.x, local_bb.y));
-        ImRect_AddPoint(bb, ImVec2(local_bb.z, local_bb.w));
+        ImRect_AddPoint(bb, local_bb.x, local_bb.y);
+        ImRect_AddPoint(bb, local_bb.z, local_bb.w);
     }
 
     if (Flags & ImDrawListFlags_AntiAliasedLines)
@@ -1029,9 +1029,9 @@ void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_coun
         ImVec4 local_bb(+FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX);
         ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
         for (const ImVec2* p = points, *end = &points[points_count]; p < end; p++)
-            ImRect_AddPoint(local_bb, (*p));
-        ImRect_AddPoint(bb, ImVec2(local_bb.x, local_bb.y));
-        ImRect_AddPoint(bb, ImVec2(local_bb.z, local_bb.w));
+            ImRect_AddPoint(local_bb, p->x, p->y);
+        ImRect_AddPoint(bb, local_bb.x, local_bb.y);
+        ImRect_AddPoint(bb, local_bb.z, local_bb.w);
     }
 
     if (Flags & ImDrawListFlags_AntiAliasedFill)
@@ -1483,8 +1483,8 @@ void ImDrawList::AddRectFilled(const ImVec2& p_min, const ImVec2& p_max, ImU32 c
         PathRect(p_min, p_max, rounding, flags);
         PathFillConvex(col, ImDrawFlags_NoAddToBoundingRect);
         ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
-        ImRect_AddPoint(bb, p_min);
-        ImRect_AddPoint(bb, p_max);
+        ImRect_AddPoint(bb, p_min.x, p_min.y);
+        ImRect_AddPoint(bb, p_max.x, p_max.y);
     }
 }
 
@@ -1503,8 +1503,8 @@ void ImDrawList::AddRectFilledMultiColor(const ImVec2& p_min, const ImVec2& p_ma
     PrimWriteVtx(p_max, uv, col_bot_right);
     PrimWriteVtx(ImVec2(p_min.x, p_max.y), uv, col_bot_left);
     ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
-    ImRect_AddPoint(bb, p_min);
-    ImRect_AddPoint(bb, p_max);
+    ImRect_AddPoint(bb, p_min.x, p_min.y);
+    ImRect_AddPoint(bb, p_max.x, p_max.y);
 }
 
 void ImDrawList::AddQuad(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, ImU32 col, float thickness)
@@ -1999,7 +1999,7 @@ void ImDrawList::AddConcavePolyFilled(const ImVec2* points, const int points_cou
     {
         ImVec4& bb = CmdBuffer.Data[CmdBuffer.Size - 1].VtxBoundingRect;
         for (const ImVec2* p = points, *end = &points[points_count]; p < end; p++)
-            ImRect_AddPoint(bb, (*p));
+            ImRect_AddPoint(bb, p->x, p->y);
     }
 
     const ImVec2 uv = _Data->TexUvWhitePixel;
@@ -4290,8 +4290,8 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, const ImVec2& pos, Im
 
     if (max_x < last_x2)
         max_x = last_x2; // Line may not end with \n, measure max_x of final character.
-    ImRect_AddPoint(bb, ImVec2(min_x, min_y));
-    ImRect_AddPoint(bb, ImVec2(max_x, max_y));
+    ImRect_AddPoint(bb, min_x, min_y);
+    ImRect_AddPoint(bb, max_x, max_y);
 
     // Give back unused vertices (clipped ones, blanks) ~ this is essentially a PrimUnreserve() action.
     draw_list->VtxBuffer.Size = (int)(vtx_write - draw_list->VtxBuffer.Data); // Same as calling shrink()
