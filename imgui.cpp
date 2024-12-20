@@ -9127,7 +9127,8 @@ ImDrawList* ImGui::GetWindowDrawList()
 float ImGui::GetWindowDpiScale()
 {
     ImGuiContext& g = *GImGui;
-    return g.CurrentDpiScale;
+    return ImGui::IsKeyDown(ImGuiKey_RightAlt) ? 1.25f : 1.0f;
+    // return g.CurrentDpiScale;
 }
 
 ImGuiViewport* ImGui::GetWindowViewport()

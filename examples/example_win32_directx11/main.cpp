@@ -7,6 +7,7 @@
 // - Introduction, links and more at the top of imgui.cpp
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 #include <d3d11.h>
@@ -26,6 +27,157 @@ void CleanupDeviceD3D();
 void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+void ImGui_ImplDX11_CreateFontsTexture();
+void ImGui_ImplDX11_DestroyFontsTexture();
+
+namespace ImDPI
+{
+
+struct ImDPIContext
+{
+    ImFont* FindFontForScale(ImFont* font, float scale) const
+    {
+        ImGuiID key = ImHashData(&font, sizeof(font), ImHashData(&scale, sizeof(scale)));
+        return (ImFont*)Storage.GetVoidPtr(key);
+    }
+
+    void AddFontForScale(ImFont* font, float scale)
+    {
+        FontBakeRequest.push_back({ font, scale });
+    }
+
+    struct FontScalePair
+    {
+        ImFont* Font;
+        float Scale;
+    };
+
+    ImGuiStorage Storage;
+    ImVector<FontScalePair> FontBakeRequest;
+    ImVector<bool> IsScaledStack;
+    ImVector<float> ScaleStack;
+    ImVector<ImGuiStyle> StyleStack;
+};
+
+ImDPIContext* g_DPIContext = nullptr;
+
+ImDPIContext* CreateContext()
+{
+    IM_ASSERT(g_DPIContext == nullptr);
+    g_DPIContext = IM_NEW(ImDPIContext);
+    return g_DPIContext;
+}
+
+void DestroyContext(ImDPIContext* ctx)
+{
+    if (g_DPIContext == ctx)
+        g_DPIContext = nullptr;
+    IM_DELETE(ctx);
+}
+
+void NewFrame()
+{
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    ImDPIContext& gd = *g_DPIContext;
+    IM_ASSERT(atlas->Locked == false && "Atlas must not be locked!");
+    if (gd.FontBakeRequest.empty())
+        return;
+
+    for (int i = 0; i < gd.FontBakeRequest.Size; i++)
+    {
+        const auto& pair = gd.FontBakeRequest[i];
+
+        ImFontConfig config = *pair.Font->ConfigData;
+        config.DstFont = NULL;
+        config.FontDataOwnedByAtlas = false;
+        config.SizePixels *= pair.Scale;
+        memset(config.Name, 0, IM_ARRAYSIZE(config.Name));
+        ImFont* scaledFont = atlas->AddFont(&config);
+
+        scaledFont->FontSize = pair.Font->FontSize;
+        scaledFont->Scale = pair.Scale;
+        gd.Storage.SetVoidPtr(ImHashData(&pair.Font, sizeof(pair.Font), ImHashData(&pair.Scale, sizeof(pair.Scale))), scaledFont);
+    }
+    gd.FontBakeRequest.clear();
+    atlas->Build();
+    ImGui_ImplDX11_DestroyFontsTexture();
+    ImGui_ImplDX11_CreateFontsTexture();
+}
+
+void PushFont(ImFont* font)
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImDPIContext& gd = *g_DPIContext;
+    
+    // Maybe current font does not need scaling at all.
+    if (ImGui::GetWindowDpiScale() == font->Scale)
+    {
+        ImGui::PushFont(font);
+        return;
+    }
+
+    // Maybe scaled font is already in the atlas.
+    if (ImFont* scaledFont = gd.FindFontForScale(font, ImGui::GetWindowDpiScale()))
+    {
+        ImGui::PushFont(scaledFont);
+        return;
+    }
+
+    // Request baking a scaled font version.
+    gd.AddFontForScale(font, ImGui::GetWindowDpiScale());
+
+    // Do the best effort scaling for this first frame, font will be baked on the next frame into the atlas.
+    float globalFontScale = (ImGui::GetWindowDpiScale() / font->Scale) * g.IO.FontGlobalScale;
+    ImSwap(g.IO.FontGlobalScale, globalFontScale);
+    ImGui::PushFont(font);
+    ImSwap(g.IO.FontGlobalScale, globalFontScale);
+}
+
+bool Begin(const char* name, bool* p_open = NULL, ImGuiWindowFlags flags = 0)
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImDPIContext& gd = *g_DPIContext;
+    bool result = ImGui::Begin(name, p_open, flags);
+    if (result)
+    {
+        float prevScale = gd.ScaleStack.empty() ? 1.0f : gd.ScaleStack.back();
+        float thisScale = ImGui::GetWindowDpiScale();
+        bool isScaled = prevScale != thisScale;
+        gd.IsScaledStack.push_back(isScaled);
+        if (isScaled)
+        {
+            gd.StyleStack.push_back(g.Style);
+            gd.ScaleStack.push_back(thisScale);
+            g.Style = gd.StyleStack.back();
+            g.Style.ScaleAllSizes(thisScale / prevScale);
+            ImDPI::PushFont(g.Font);
+        }
+    }
+    else
+    {
+        gd.IsScaledStack.push_back(false);
+    }
+    return result;
+}
+
+void End()
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImDPIContext& gd = *g_DPIContext;
+    bool isScaled = gd.IsScaledStack.back();
+    gd.IsScaledStack.pop_back();
+    if (isScaled)
+    {
+        g.Style = gd.StyleStack.back();
+        gd.StyleStack.pop_back();
+        gd.ScaleStack.pop_back();
+        ImGui::PopFont();
+    }
+    ImGui::End();
+}
+
+}
 
 // Main code
 int main(int, char**)
@@ -51,11 +203,12 @@ int main(int, char**)
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImDPI::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+    //io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
     //io.ConfigViewportsNoDefaultParent = true;
@@ -90,7 +243,7 @@ int main(int, char**)
     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
     //io.Fonts->AddFontDefault();
     //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
+    io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
@@ -136,6 +289,7 @@ int main(int, char**)
         }
 
         // Start the Dear ImGui frame
+        ImDPI::NewFrame();
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
@@ -149,7 +303,7 @@ int main(int, char**)
             static float f = 0.0f;
             static int counter = 0;
 
-            ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+            ImDPI::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
 
             ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
             ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
@@ -164,17 +318,17 @@ int main(int, char**)
             ImGui::Text("counter = %d", counter);
 
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-            ImGui::End();
+            ImDPI::End();
         }
 
         // 3. Show another simple window.
         if (show_another_window)
         {
-            ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+            ImDPI::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
             ImGui::Text("Hello from another window!");
             if (ImGui::Button("Close Me"))
                 show_another_window = false;
-            ImGui::End();
+            ImDPI::End();
         }
 
         // Rendering
