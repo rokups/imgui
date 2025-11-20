@@ -1,6 +1,7 @@
 dear imgui
 CHANGELOG
 
+
 This document holds the user-facing changelog that we also use in release notes.
 We generally fold multiple commits pertaining to the same topic as a single entry.
 Changes to backends are also included within the individual .cpp files of each backend.
