@@ -656,7 +656,18 @@ jobs:
           path: ${{ github.workspace }}/imgui
 
       - uses: actions/checkout@v5
+        id: checkout-pr
+        if: github.event_name == 'pull_request'
         continue-on-error: true
+        with:
+          fetch-depth: 1
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          path: ${{ github.workspace }}/imgui_test_engine
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: true
+
+      - uses: actions/checkout@v5
+        if: steps.checkout-pr.outcome != 'success'
         with:
           fetch-depth: 1
           repository: ocornut/imgui_test_engine
@@ -711,6 +722,18 @@ jobs:
         path: ${{ github.workspace }}/imgui
 
     - uses: actions/checkout@v5
+      id: checkout-pr
+      if: github.event_name == 'pull_request'
+      continue-on-error: true
+      with:
+        fetch-depth: 1
+        repository: ${{ github.event.pull_request.head.repo.full_name }}
+        path: ${{ github.workspace }}/imgui_test_engine
+        ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
+
+    - uses: actions/checkout@v5
+      if: steps.checkout-pr.outcome != 'success'
       with:
         fetch-depth: 1
         repository: ocornut/imgui_test_engine
@@ -749,6 +772,18 @@ jobs:
         path: ${{ github.workspace }}/imgui
 
     - uses: actions/checkout@v5
+      id: checkout-pr
+      if: github.event_name == 'pull_request'
+      continue-on-error: true
+      with:
+        fetch-depth: 1
+        repository: ${{ github.event.pull_request.head.repo.full_name }}
+        path: ${{ github.workspace }}/imgui_test_engine
+        ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
+
+    - uses: actions/checkout@v5
+      if: steps.checkout-pr.outcome != 'success'
       with:
         fetch-depth: 1
         repository: ocornut/imgui_test_engine
