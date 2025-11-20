@@ -661,9 +661,9 @@ jobs:
         continue-on-error: true
         with:
           fetch-depth: 1
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          repository: ${{ format('{0}/imgui_test_engine', github.event.pull_request.head.user.login) }}
           path: ${{ github.workspace }}/imgui_test_engine
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.head_ref }}
           submodules: true
 
       - uses: actions/checkout@v5
@@ -721,15 +721,20 @@ jobs:
       with:
         path: ${{ github.workspace }}/imgui
 
+    - name: Dump GitHub context
+      env:
+        GITHUB_CONTEXT: ${{ toJson(github) }}
+      run: echo "$GITHUB_CONTEXT"
+
     - uses: actions/checkout@v5
       id: checkout-pr
       if: github.event_name == 'pull_request'
       continue-on-error: true
       with:
         fetch-depth: 1
-        repository: ${{ github.event.pull_request.head.repo.full_name }}
+        repository: ${{ format('{0}/imgui_test_engine', github.event.pull_request.head.user.login) }}
         path: ${{ github.workspace }}/imgui_test_engine
-        ref: ${{ github.event.pull_request.head.sha }}
+        ref: ${{ github.head_ref }}
         submodules: true
 
     - uses: actions/checkout@v5
@@ -777,9 +782,9 @@ jobs:
       continue-on-error: true
       with:
         fetch-depth: 1
-        repository: ${{ github.event.pull_request.head.repo.full_name }}
+        repository: ${{ format('{0}/imgui_test_engine', github.event.pull_request.head.user.login) }}
         path: ${{ github.workspace }}/imgui_test_engine
-        ref: ${{ github.event.pull_request.head.sha }}
+        ref: ${{ github.head_ref }}
         submodules: true
 
     - uses: actions/checkout@v5
